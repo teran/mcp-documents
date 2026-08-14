@@ -104,4 +104,36 @@ mod tests {
         fn assert_error<T: std::error::Error>() {}
         assert_error::<ExtractionError>();
     }
+
+    #[test]
+    fn display_covers_all_variants() {
+        let cases = [
+            (
+                ExtractionError::Unsupported(DocumentKind::Pdf),
+                "unsupported document kind: pdf",
+            ),
+            (
+                ExtractionError::Malformed("m".into()),
+                "malformed document: m",
+            ),
+            (ExtractionError::Encrypted, "document is encrypted"),
+            (
+                ExtractionError::ResourceLimit("r".into()),
+                "resource limit exceeded: r",
+            ),
+            (
+                ExtractionError::MissingPart("p".into()),
+                "missing required part: p",
+            ),
+            (ExtractionError::Io("i".into()), "io error: i"),
+            (
+                ExtractionError::OcrUnavailable("o".into()),
+                "OCR unavailable: o",
+            ),
+            (ExtractionError::Internal("n".into()), "internal error: n"),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+        }
+    }
 }

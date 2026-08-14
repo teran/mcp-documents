@@ -82,6 +82,22 @@ mod tests {
     }
 
     #[test]
+    fn maps_convert_error_malformed_with_part_and_catch_all() {
+        use anydoc::ConvertError;
+
+        // Malformed with a part name prefixes the detail.
+        let err = map_convert_error(ConvertError::Malformed {
+            part: Some("stream".into()),
+            detail: "corrupt".into(),
+        });
+        assert_eq!(err.to_string(), "malformed document: stream: corrupt");
+
+        // A not-yet-covered variant falls through to Internal.
+        let err = map_convert_error(ConvertError::Unsupported("other".into()));
+        assert!(matches!(err, ExtractionError::Unsupported(_)));
+    }
+
+    #[test]
     fn maps_load_pdf_error_variants() {
         use pdf_render::pdf_syntax::LoadPdfError;
 

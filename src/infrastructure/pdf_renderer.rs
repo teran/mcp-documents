@@ -113,4 +113,23 @@ mod tests {
         // domain errors, never a panic.
         let _ = err;
     }
+
+    #[test]
+    fn constructors_and_factory() {
+        // `new()`, `Default` and `make_renderer()` all yield a usable renderer.
+        let a = PdfRenderer::new();
+        let b = PdfRenderer::default();
+        let c = make_renderer();
+        assert!(a.render_page(b"junk", 0, 72).is_err());
+        assert!(b.render_page(b"junk", 0, 72).is_err());
+        assert!(c.render_page(b"junk", 0, 72).is_err());
+    }
+
+    #[test]
+    fn rgba8_to_luma_handles_greys() {
+        // Mid-grey rounds to the same value for all channels.
+        let rgba = [100, 100, 100, 255];
+        let luma = rgba8_to_luma(&rgba);
+        assert_eq!(luma, vec![100]);
+    }
 }

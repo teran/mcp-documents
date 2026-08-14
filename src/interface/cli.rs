@@ -115,4 +115,87 @@ mod tests {
         assert!(CliCommand::Serve.is_serve());
         assert!(!CliCommand::Classify(PathBuf::from("x")).is_serve());
     }
+
+    // --- run_cli (fake ports) ---
+
+    use std::sync::Arc;
+
+    use crate::application::{ClassifyDocumentUseCase, ExtractDocumentUseCase};
+    use crate::domain::document::{Classification, DocumentKind, PdfType};
+    use crate::domain::error::ExtractionError;
+    use crate::domain::ports::{DocumentExtractor, OcrProvider, PdfPageRenderer};
+    use crate::domain::result::{ExtractionResult, PageBitmap, Source};
+
+    /// Fake extractor classifying input as a text-based PDF.
+    #[derive(Clone, Default)]
+    struct FakeExtractor;
+
+    impl DocumentExtractor for FakeExtractor {
+        fn classify(&self, _source: &Source) -> Result<Classification, ExtractionError> {
+            Ok(Classification {
+                kind: DocumentKind::Pdf,
+                pdf_type: Some(PdfType::TextBased),
+                pages_needing_ocr: Vec::new(),
+            })
+        }
+
+        fn extract_text(&self, _source: &Source) -> Result<ExtractionResult, ExtractionError> {
+            Ok(ExtractionResult::markdown_only(
+                DocumentKind::Pdf,
+                Some(PdfType::TextBased),
+                "cli markdown".into(),
+            ))
+        }
+    }
+
+    struct FakeOcr;
+    impl OcrProvider for FakeOcr {
+        fn ocr_page(&self, _b: &PageBitmap) -> Result<String, ExtractionError> {
+            Err(ExtractionError::OcrUnavailable("no".into()))
+        }
+    }
+
+    struct FakeRenderer;
+    impl PdfPageRenderer for FakeRenderer {
+        fn render_page(
+            &self,
+            _p: &[u8],
+            _i: usize,
+            _d: u32,
+        ) -> Result<PageBitmap, ExtractionError> {
+            Err(ExtractionError::Internal("no render".into()))
+        }
+    }
+
+    fn use_cases() -> (ClassifyDocumentUseCase, ExtractDocumentUseCase) {
+        let ext = Arc::new(FakeExtractor);
+        let classify = ClassifyDocumentUseCase::new(ext.clone());
+        let extract = ExtractDocumentUseCase::new(ext, Arc::new(FakeOcr), Arc::new(FakeRenderer));
+        (classify, extract)
+    }
+
+    #[tokio::test]
+    async fn run_cli_classify_prints_and_ok() {
+        let (classify, extract) = use_cases();
+        let cmd = CliCommand::Classify(PathBuf::from("a.pdf"));
+        assert!(run_cli(&cmd, &classify, &extract).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_cli_extract_and_extract_text_ok() {
+        let (classify, extract) = use_cases();
+        for cmd in [
+            CliCommand::Extract(PathBuf::from("a.pdf")),
+            CliCommand::ExtractText(PathBuf::from("a.pdf")),
+        ] {
+            assert!(run_cli(&cmd, &classify, &extract).await.is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn run_cli_serve_returns_error() {
+        let (classify, extract) = use_cases();
+        let cmd = CliCommand::Serve;
+        assert!(run_cli(&cmd, &classify, &extract).await.is_err());
+    }
 }

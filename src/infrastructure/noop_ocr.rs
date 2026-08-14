@@ -47,4 +47,12 @@ mod tests {
         let err = p.ocr_page(&bmp).unwrap_err();
         assert!(matches!(err, ExtractionError::OcrUnavailable(_)));
     }
+
+    #[test]
+    fn make_ocr_builds_noop_provider() {
+        let ocr = make_ocr();
+        let bmp = PageBitmap::new(2, 2, 1, vec![0; 4]).unwrap();
+        let err = ocr.ocr_page(&bmp).unwrap_err();
+        assert!(matches!(err, ExtractionError::OcrUnavailable(_)));
+    }
 }

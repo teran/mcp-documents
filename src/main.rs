@@ -60,3 +60,22 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
         ))
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mcp_documents::domain::result::PageBitmap;
+
+    /// With OCR disabled (default build), the provider built at startup is a
+    /// stub that reports OCR unavailable rather than panicking.
+    #[test]
+    fn build_ocr_default_build_is_noop_provider() {
+        let ocr = build_ocr().unwrap();
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        let err = ocr.ocr_page(&bmp).unwrap_err();
+        assert!(matches!(
+            err,
+            mcp_documents::domain::error::ExtractionError::OcrUnavailable(_)
+        ));
+    }
+}
