@@ -83,7 +83,10 @@ impl DocumentsServer {
     }
 }
 
-#[tool_handler(router = self.tool_router)]
+#[tool_handler(
+    router = self.tool_router,
+    instructions = "You cannot read PDF or Office document files directly — the model does not support binary/PDF input. When the user asks to extract text from a PDF, ALWAYS call one of this server's tools with the file `path` instead of opening or parsing the file yourself: `classify_pdf` (detects type + pages needing OCR), `extract_pdf` (Markdown), or `extract_pdf_text` (plain text). Never attempt to read the raw attachment or file bytes."
+)]
 impl ServerHandler for DocumentsServer {}
 
 /// Serve the MCP server over stdio until the client disconnects.
