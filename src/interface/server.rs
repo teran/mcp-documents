@@ -7,9 +7,10 @@ use rmcp::model::{CallToolResult, ErrorData};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 
 use crate::application::{ClassifyDocumentUseCase, ExtractDocumentUseCase};
-use crate::domain::result::Source;
 
-use super::tools::{ClassifyParams, ExtractParams, json_result, text_result, tool_error};
+use super::tools::{
+    source_from_params, ClassifyParams, ExtractParams, json_result, text_result, tool_error,
+};
 
 /// The MCP server exposing document tools over stdio.
 #[derive(Clone)]
@@ -38,7 +39,10 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<ClassifyParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = Source::Path(std::path::PathBuf::from(params.path));
+        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(tool_error(&e)),
+        };
         match self.classify.classify(&source) {
             Ok(c) => Ok(json_result(rmcp::serde_json::json!({
                 "kind": c.kind.as_str(),
@@ -62,7 +66,10 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<ExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = Source::Path(std::path::PathBuf::from(params.path));
+        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(tool_error(&e)),
+        };
         match self.extract.extract(&source).await {
             Ok(result) => Ok(text_result(result.markdown)),
             Err(e) => Ok(tool_error(&e)),
@@ -75,7 +82,10 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<ExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = Source::Path(std::path::PathBuf::from(params.path));
+        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(tool_error(&e)),
+        };
         match self.extract.extract(&source).await {
             Ok(result) => Ok(text_result(result.markdown)),
             Err(e) => Ok(tool_error(&e)),
@@ -183,6 +193,7 @@ mod tests {
         let res = s
             .classify_pdf(Parameters(ClassifyParams {
                 path: "whatever.pdf".into(),
+                bytes: None,
             }))
             .await
             .unwrap();
@@ -198,6 +209,7 @@ mod tests {
         let res = s
             .classify_pdf(Parameters(ClassifyParams {
                 path: "bad.pdf".into(),
+                bytes: None,
             }))
             .await
             .unwrap();
@@ -211,6 +223,7 @@ mod tests {
         let res = s
             .extract_pdf(Parameters(ExtractParams {
                 path: "a.pdf".into(),
+                bytes: None,
             }))
             .await
             .unwrap();
@@ -224,6 +237,7 @@ mod tests {
         let res = s
             .extract_pdf_text(Parameters(ExtractParams {
                 path: "a.pdf".into(),
+                bytes: None,
             }))
             .await
             .unwrap();
@@ -237,6 +251,7 @@ mod tests {
         let res = s
             .extract_pdf(Parameters(ExtractParams {
                 path: "bad.pdf".into(),
+                bytes: None,
             }))
             .await
             .unwrap();
