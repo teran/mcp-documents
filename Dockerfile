@@ -23,11 +23,12 @@ COPY Cargo.toml Cargo.lock* ./
 # Pre-provision rus.traineddata into the tesseract-rs tessdata cache dir BEFORE
 # building. The crate only auto-downloads eng/tur, so rus must be present or
 # embedding silently fails. Fetch from a pinned mirror (jsdelivr) to avoid
-# flaky GitHub raw. `tessdata_fast` is much smaller than the crate's default
-# `best` variant; adjust the URL if you prefer `best`.
+# flaky GitHub raw. We use `tessdata_best` (accurate LSTM models) — it is larger
+# (rus ≈ 15 MB vs ≈ 4 MB for `fast`), adding ~22 MB to the binary over `fast`.
+# Switch the URL to tessdata_fast if you prefer a smaller binary.
 RUN mkdir -p ~/.tesseract-rs/tessdata \
     && curl -fL -o ~/.tesseract-rs/tessdata/rus.traineddata \
-         "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main/rus.traineddata"
+         "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata"
 
 # Embed English + Russian OCR (default is eng,tur — Russian is NOT included).
 ENV TESSERACT_EMBED_LANGUAGES=eng,rus
