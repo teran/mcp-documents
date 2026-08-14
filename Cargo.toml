@@ -1,0 +1,45 @@
+[package]
+name = "mcp-documents"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "An MCP server that extracts clean text and Markdown from documents (Round 1: PDF)."
+license = "Apache-2.0"
+readme = "README.md"
+
+# ---------------------------------------------------------------------------
+# Feature strategy
+# ---------------------------------------------------------------------------
+# Default build is fully pure-Rust: no C++ compiler / CMake / rus.traineddata
+# are needed to compile or test locally. The heavy OCR stack (vendored
+# Tesseract + Leptonica, embedded eng+rus tessdata) is gated behind the
+# `ocr-native` feature, which is OFF by default and enabled in the Docker/CI
+# build.
+[features]
+default = []
+# Enables `tesseract-rs` with `embed-tessdata`. Requires a C++ compiler + CMake
+# + internet at build time (compiles vendored Tesseract/Leptonica) and the
+# `TESSERACT_EMBED_LANGUAGES=eng,rus` env var with pre-provisioned
+# `rus.traineddata`. See SPEC §4.3.
+ocr-native = ["dep:tesseract-rs"]
+
+[dependencies]
+# MCP framework. Default features include `server`; `transport-io` enables the
+# stdio transport (`rmcp::transport::stdio`).
+rmcp = { version = "3.1.2", features = ["server", "transport-io"] }
+# Document -> Markdown engine (PDF via pdf-inspector internally).
+anydoc = "0.1.8"
+# Pure-Rust PDF page -> image rasterizer (no native deps).
+pdf-render = "1.0.0-beta.17"
+
+tokio = { version = "1", features = ["full"] }
+# Version ranges aligned with rmcp's re-exports so `rmcp::serde`/`rmcp::schemars`
+# unify with the direct `serde`/`schemars` below (single instance in the tree).
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+
+# OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
+tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

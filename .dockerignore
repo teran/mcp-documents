@@ -1,0 +1,11 @@
+target
+.git
+.gitignore
+**/*.rs.bk
+Dockerfile
+Makefile
+README.md
+SPEC.md
+AGENTS.md
+LICENSE
+*.md
