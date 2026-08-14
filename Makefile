@@ -12,15 +12,41 @@ RUSTFMT  := cargo fmt
 CLIPPY   := cargo clippy
 
 # Full (OCR-enabled) build env. The default tessdata languages are eng,tur —
-# we require Russian, so embed eng+rus. `rus.traineddata` must be present in the
-# tesseract-rs tessdata cache dir BEFORE this build (pre-provision it or build
-# via Docker). See SPEC §4.3.
+# we require Russian, so embed eng+rus. `prepare-tessdata` guarantees both
+# eng.traineddata and rus.traineddata exist in the tesseract-rs cache dir
+# before building. See SPEC §4.3.
 EMBED_LANGS := eng,rus
 
-.PHONY: build build-local test coverage fmt lint check-ocr check
+# tesseract-rs tessdata cache dir (per-OS), and the source mirror for the
+# training data. We always need English + Russian.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+TESSDATA_DIR := $(HOME)/Library/Application Support/tesseract-rs/tessdata
+else
+TESSDATA_DIR := $(HOME)/.tesseract-rs/tessdata
+endif
+TESSDATA_MIRROR := https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main
+TESSDATA_LANGS  := eng rus
 
-## Full self-contained binary with OCR (needs C++/CMake + rus.traineddata).
-build:
+.PHONY: build build-local prepare-tessdata test coverage fmt lint check-ocr check
+
+## Ensure eng.traineddata + rus.traineddata exist in the tesseract-rs cache dir
+## (download them from a mirror if missing). Required before any `ocr-native`
+## build, otherwise `rus` silently fails to embed.
+prepare-tessdata:
+	mkdir -p "$(TESSDATA_DIR)"
+	@for lang in $(TESSDATA_LANGS); do \
+		f="$(TESSDATA_DIR)/$$lang.traineddata"; \
+		if [ ! -f "$$f" ]; then \
+			echo "==> downloading $$lang.traineddata -> $$f"; \
+			curl -fL -o "$$f" "$(TESSDATA_MIRROR)/$$lang.traineddata"; \
+		else \
+			echo "==> $$lang.traineddata already present"; \
+		fi; \
+	done
+
+## Full self-contained binary with OCR (needs C++/CMake + eng+rus tessdata).
+build: prepare-tessdata
 	TESSERACT_EMBED_LANGUAGES=$(EMBED_LANGS) $(CARGO) build --release --features ocr-native
 
 ## Local build with default features (pure Rust, no OCR).
