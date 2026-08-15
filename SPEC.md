@@ -5,25 +5,24 @@
 - **Language:** Rust
 - **Runtime:** `tokio` (async)
 - **Architecture:** DDD / Clean Architecture (ports & adapters)
-- **Status:** Round 1 — PDF text extraction (incl. OCR for scanned PDFs)
+- **Status:** Multi-format — PDF text extraction (incl. OCR for scanned PDFs) **plus** MS Office / ODF / RTF / EPUB / CSV.
 
 ---
 
 ## 1. Goals
 
-Round 1 (this milestone) is scoped strictly to **PDF** files. The system must be able to:
+The server extracts clean text/Markdown from a broad set of document formats. The system must be able to:
 
-1. **Classify** a PDF as `TextBased`, `Scanned`, `ImageBased`, or `Mixed`, identifying which pages require OCR.
-2. **Extract** text/Markdown from *text-based* PDFs (including tables, multi-column layouts, and position-aware content).
-3. **OCR** scanned / image-only pages via a pluggable OCR provider and **merge** the results back into a coherent document.
+1. **Classify** a document (PDF or any supported format) — for PDFs, identify `TextBased` / `Scanned` / `ImageBased` / `Mixed` and which pages require OCR.
+2. **Extract** text/Markdown from *text-based* PDFs (tables, multi-column layouts, position-aware content) **and** from MS Office / ODF / RTF / EPUB / CSV formats (via `anydoc`).
+3. **OCR** scanned / image-only **PDF** pages via a pluggable OCR provider and **merge** the results back into a coherent document (non-PDF formats go straight through `anydoc`, no OCR).
 4. Expose these capabilities to MCP clients (e.g. Claude Code, opencode) over **stdio** as typed tools.
 5. Maintain a **line-coverage target of ≥ 85%**.
 
-The architecture is designed so that **Round 2** (Microsoft Office and other formats) is a natural, low-risk extension.
+PDF+OCR was the founding capability; multi-format (MS Office etc.) is now enabled as a natural extension — a wider `DocumentKind`, an `extract_document`/`classify_document` tool pair, and no new document library (all via `anydoc`).
 
-## 2. Non-Goals (Round 1)
+## 2. Non-Goals
 
-- ❌ No MS Office / OpenDocument / RTF / EPUB / CSV support yet (Round 2 roadmap only).
 - ❌ No editing, conversion *to* PDF, or document generation.
 - ❌ No rendering / thumbnailing of pages.
 - ❌ No network service / HTTP transport (stdio only for now).
@@ -33,7 +32,7 @@ The architecture is designed so that **Round 2** (Microsoft Office and other for
 
 ## 3. Scope
 
-### 3.1 Round 1 (implemented)
+### 3.1 PDF + OCR (foundation, implemented)
 
 - PDF classification (`classify_pdf`).
 - PDF → Markdown extraction, text-based path (`extract_pdf`).
@@ -41,11 +40,13 @@ The architecture is designed so that **Round 2** (Microsoft Office and other for
 - OCR routing for scanned/image pages via `OcrProvider` port + reference `TesseractOcrProvider` adapter (`tesseract-rs` with **embedded tessdata**, English + Russian).
 - MCP stdio server (`rmcp`).
 
-### 3.2 Roadmap — Round 2 (designed, not implemented)
+### 3.2 Multi-format (R2, implemented)
 
-- Microsoft Office: Word (`doc`, `docx`, `docm`), Excel (`xls`, `xlsx`, `xlsm`, `xlsb`), PowerPoint (`ppt`, `pps`, `pot`, `pptx`, `pptm`, `ppsx`, `ppsm`).
-- Optional: OpenDocument, RTF, EPUB, CSV.
-- Round 2 **mostly unlocks format routing** — because we standardize on `anydoc`, the same `DocumentExtractor` port and application flow already cover these formats. No new document library is required; the changes are (a) wider `DocumentKind` enum, (b) enabling the `extract_document` general tool for non-PDF kinds, (c) extending fixture/test matrices.
+- **MS Office + more, all via `anydoc`:** Word (`doc`, `docx`), Excel (`xls`, `xlsx`), PowerPoint (`ppt`, `pptx`), plus OpenDocument (`odt`/`ods`/`odp`), RTF, EPUB, CSV.
+- Generic tools **`classify_document`** and **`extract_document`** accept any supported format (via `path` or base64 `bytes`); PDF-specific tools are retained.
+- **Routing:** PDF keeps the classify → render → OCR → merge path; **non-PDF formats go straight through `anydoc` (no OCR)**.
+- **Known limitation:** legacy binary `.doc`/`.ppt`/`.xls` extract correctly (anydoc/calamine), but **`.xls` is labeled `Xlsx`** — Excel formats are not distinguishable from bytes alone.
+- Because we standardize on `anydoc`, no new document library was required; the change was a wider `DocumentKind` enum, the generic tool pair, and extended fixture/test matrices.
 
 ## 4. Library Choice: `anydoc` (recommended) vs `pdf-inspector`
 
@@ -59,7 +60,7 @@ The architecture is designed so that **Round 2** (Microsoft Office and other for
 | ML / external services | None (pure Rust) | None |
 | Output | Clean GitHub-Flavored Markdown | Markdown + position data |
 
-**Why `anydoc`:** it satisfies our **entire** goal set with one consistent API and one consistent Markdown output. Round 2 (MS Office) is largely "unlocked" without a second integration. PDFs are handled through `pdf-inspector` under the hood, so we do not lose PDF fidelity.
+**Why `anydoc`:** it satisfies our **entire** goal set with one consistent API and one consistent Markdown output. Multi-format (MS Office + ODF/RTF/EPUB/CSV) is covered with a **single integration**; PDFs are handled through `pdf-inspector` under the hood, so we do not lose PDF fidelity.
 
 #### 4.1.1 Decision evidence (empirical spike)
 
@@ -224,7 +225,12 @@ mcp-documents/
 
 ```rust
 // document.rs
-pub enum DocumentKind { Pdf, /* Round 2: Docx, Xlsx, Pptx, Odf, Rtf, Epub, Csv, ... */ }
+pub enum DocumentKind {
+    Pdf, Doc, Docx, Xls, Xlsx, Ppt, Pptx,
+    Odt, Ods, Odp, Rtf, Epub, Csv, Unknown,
+}
+// lowercase as_str(): "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+// "odt", "ods", "odp", "rtf", "epub", "csv", "unknown"
 
 pub enum PdfType { TextBased, Scanned, ImageBased, Mixed }
 
@@ -404,15 +410,17 @@ DocumentsServer::new(deps).serve(stdio()).await?;
 service.waiting().await?;
 ```
 
-### 8.2 Round-1 tool surface (PDF-focused)
+### 8.2 Tool surface
 
 | Tool | Input | Output |
 |------|-------|--------|
 | `classify_pdf` | `path` (or `bytes`) | `{ pdf_type, pages_needing_ocr, confidence }` |
-| `extract_pdf` | `path` (or `bytes`) | Markdown text of the document |
+| `extract_pdf` | `path` (or `bytes`) | Markdown text of the PDF (with OCR) |
 | `extract_pdf_text` | `path` (or `bytes`) | Plain-text variant |
+| `classify_document` | `path` (+ optional base64 `bytes`) | `{ kind, pdf_type?, pages_needing_ocr? }` for **any** supported format |
+| `extract_document` | `path` (+ optional base64 `bytes`) | Markdown text for **any** supported format (PDF uses OCR; others go straight through `anydoc`) |
 
-Params structs derive `serde::Deserialize` + `schemars::JsonSchema`. A general `extract_document` tool is intentionally **not** exposed in Round 1 to keep the surface PDF-only; it becomes the natural Round-2 addition once `DocumentKind` widens.
+Params structs derive `serde::Deserialize` + `schemars::JsonSchema`. The PDF-specific tools remain; `classify_document`/`extract_document` are the generic multi-format entry points.
 
 ### 8.3 Error handling strategy
 
@@ -427,8 +435,8 @@ Two distinct channels per the `rmcp` model:
 
 The **same binary** serves both local MCP (stdio, primary) and a standalone CLI (costs nothing). Dispatch in `main.rs` parses argv: a recognized subcommand runs the CLI; otherwise it runs the MCP stdio server.
 
-- `classify <path>` — print the PDF classification (kind, `pdf_type`, pages needing OCR).
-- `extract <path>` — print extracted Markdown.
+- `classify <path>` — print the classification (kind; for PDFs, `pdf_type` + pages needing OCR).
+- `extract <path>` — print extracted Markdown (any supported format).
 - `extract-text <path>` — print extracted plain text.
 - `serve` — run the MCP stdio server (also the default when no recognized subcommand is given).
 
@@ -560,8 +568,8 @@ cargo add --dev tokio-test
 
 | Round | Scope | Notes |
 |-------|-------|-------|
-| **R1 (now)** | PDF classification + text extraction + OCR routing (pure-Rust PDF→image renderer + `tesseract-rs` OCR with embedded eng+rus tessdata); single self-contained binary; 85% coverage | `anydoc` + `rmcp` + `tesseract-rs` (embed-tessdata) + pure-Rust renderer |
-| **R2 (next)** | MS Office: Word / Excel / PowerPoint (all major extensions); optional ODF / RTF / EPUB / CSV | Mostly format routing — widen `DocumentKind`, enable `extract_document`; same `DocumentExtractor` port, **no new library** |
+| **R1 (done)** | PDF classification + text extraction + OCR routing (pure-Rust PDF→image renderer + `tesseract-rs` OCR with embedded eng+rus tessdata); single self-contained binary; 85% coverage | `anydoc` + `rmcp` + `tesseract-rs` (embed-tessdata) + pure-Rust renderer |
+| **R2 (done)** | MS Office (Word/Excel/PowerPoint) + ODF/RTF/EPUB/CSV via `anydoc`; generic `classify_document`/`extract_document`; non-PDF routing (no OCR) | Wider `DocumentKind` + generic tools; same `DocumentExtractor` port, **no new library** |
 | **R3 (candidate)** | OCR quality, concurrency/backpressure, large-file streaming, optional HTTP transport | Depends on feedback |
 
 ## 15. Open Questions
@@ -572,7 +580,8 @@ cargo add --dev tokio-test
 - **OCR concurrency:** confirm the clone-pool sizing (cores) and whether the R1 per-request-init fallback suffices vs the recommended pool (see §7.2).
 - **OCR image preparation:** exact page→image parameters (resolution ~300 DPI, grayscale via `pixmap.data_as_u8_slice()` → luma) — validated by the renderer spike.
 - **CLI vs MCP-only:** **DECIDED** — the binary ships **both**: MCP stdio server (default) and a standalone CLI (`classify`/`extract`/`extract-text`/`serve`), dispatched in `main.rs` (see §8.4). No longer open.
-- **`extract_document` exposure:** decide when to expose the general tool vs keeping `extract_pdf*` for Round 1.
-- **Byte vs path inputs:** whether all tools accept both `path` and `bytes`, or only one, for the initial API surface.
+- **`extract_document` / `classify_document` exposure:** **DECIDED** — the generic tools are shipped alongside the PDF-specific ones (§8.2). No longer open.
+- **`.xls`/`.xlsb` labeling:** **known limitation** — legacy binary `.doc`/`.ppt`/`.xls` extract correctly (anydoc/calamine), but `.xls` is labeled `Xlsx` because Excel formats are not distinguishable from bytes alone (§3.2).
+- **Byte vs path inputs:** whether all tools accept both `path` and `bytes`, or only one, for the initial API surface. (Currently the generic tools accept `path` + optional base64 `bytes`.)
 - **Remote OCR:** whether a network OCR provider is required for Round 1 or if the pure-Rust engine (and stub) is sufficient.
 - **Crate layout:** single-crate modules (default here) vs Cargo workspace — finalize when the codebase grows.

@@ -2,15 +2,16 @@
 
 An **MCP (Model Context Protocol) server** that extracts clean text and Markdown from documents.
 
-Built in **Rust** with a **Domain-Driven / Clean Architecture**, it currently supports **PDF** text extraction — including **OCR for scanned PDFs** — and is designed to extend to Microsoft Office and other formats in a future round.
+Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts clean text/Markdown from **PDF (with OCR for scanned pages) plus MS Office and other formats** — Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV.
 
 ---
 
 ## Features
 
+- 📦 **Multi-format extraction** — Word (`doc`, `docx`), Excel (`xls`, `xlsx`), PowerPoint (`ppt`, `pptx`), OpenDocument (`odt`/`ods`/`odp`), RTF, EPUB, CSV — converted to clean GitHub-Flavored Markdown, all via `anydoc`.
 - 📄 **PDF extraction** — text-based PDFs converted to clean GitHub-Flavored Markdown (tables, multi-column layout, position-aware content).
-- 🔍 **PDF classification** — detect whether a PDF is `TextBased`, `Scanned`, `ImageBased`, or `Mixed`, and which pages need OCR.
-- 🖼️ **OCR for scanned PDFs** — scanned/image-only pages routed through a pluggable OCR provider (reference: **`tesseract-rs`** with **embedded tessdata** — English + Russian — no external process or system Tesseract).
+- 🔍 **Document classification** — detect the document kind; for PDFs, whether it is `TextBased`, `Scanned`, `ImageBased`, or `Mixed` and which pages need OCR.
+- 🖼️ **OCR for scanned PDFs** — scanned/image-only **PDF** pages routed through a pluggable OCR provider (reference: **`tesseract-rs`** with **embedded tessdata** — English + Russian — no external process or system Tesseract). Non-PDF formats go straight through `anydoc` (no OCR).
 - 🔌 **Pluggable architecture** — domain & application layers are decoupled from the MCP framework and the document library, making the OCR provider and even the extraction engine swappable.
 - 📦 **Single self-contained binary** — zero runtime system dependencies; OCR (vendored Tesseract) and PDF rendering are embedded/static so nothing needs to be installed at runtime.
 - 🧪 **Tested** — 85%+ line-coverage target enforced via `cargo llvm-cov` on a bare CI runner.
@@ -105,11 +106,13 @@ Because the transport is **stdio**, add the binary as a stdio MCP server in your
 
 | Tool | Description |
 |------|-------------|
-| `classify_pdf` | Returns the PDF type (`TextBased` / `Scanned` / `ImageBased` / `Mixed`) plus the list of pages needing OCR. |
-| `extract_pdf` | Extracts the document as **Markdown** (local extraction for text pages, OCR for scanned pages, results merged). |
-| `extract_pdf_text` | Plain-text variant of `extract_pdf`. |
+| `classify_document` | Returns the detected kind for **any** supported format; for PDFs also the type (`TextBased` / `Scanned` / `ImageBased` / `Mixed`) and pages needing OCR. |
+| `extract_document` | Extracts **any** supported format as **Markdown** (PDF uses local extraction + OCR for scanned pages; others go straight through `anydoc`). |
+| `classify_pdf` | PDF-specific classification (type + pages needing OCR). |
+| `extract_pdf` | PDF-specific extraction as **Markdown** (local + OCR for scanned pages). |
+| `extract_pdf_text` | PDF-specific plain-text variant. |
 
-All tools accept a file **path** (and/or raw **bytes** depending on the final API). See [`SPEC.md`](./SPEC.md) §8.2 for details.
+All tools accept a file **path**; the generic `classify_document`/`extract_document` also accept optional base64 `bytes`. See [`SPEC.md`](./SPEC.md) §8.2 for details.
 
 ---
 
@@ -154,8 +157,9 @@ Refer to [`SPEC.md`](./SPEC.md) §5.2 for the full module map.
 
 ## Roadmap
 
-- **Round 1 (current):** PDF classification, extraction, OCR routing — shipped as a single self-contained binary.
-- **Round 2 (next):** Microsoft Office (Word / Excel / PowerPoint) and optional OpenDocument / RTF / EPUB / CSV — largely enabled by the existing `anydoc` integration.
+- **Round 1 (done):** PDF classification, extraction, OCR routing — shipped as a single self-contained binary.
+- **Round 2 (done):** Microsoft Office (Word / Excel / PowerPoint) + OpenDocument / RTF / EPUB / CSV via `anydoc`, with generic `classify_document`/`extract_document` tools.
+- **Next (candidate):** OCR quality, concurrency/backpressure, large-file streaming, optional HTTP transport.
 
 ---
 

@@ -4,7 +4,7 @@ Working on this Rust MCP server. Read this before making changes.
 
 ## Project at a glance
 
-- **What:** an MCP server extracting text/Markdown from documents (PDF now; MS Office next), shipping as a **single self-contained binary** (embedded OCR data; dynamically links glibc/libstdc++ only).
+- **What:** an MCP server extracting text/Markdown from documents — PDF (with OCR) **plus** MS Office / ODF / RTF / EPUB / CSV — shipping as a **single self-contained binary** (embedded OCR data; dynamically links glibc/libstdc++ only).
 - **Stack:** Rust, `tokio`, `rmcp` (MCP server framework), `anydoc` (document → Markdown, uses `pdf-inspector` internally for PDF), `tesseract-rs` (vendored OCR with embedded tessdata) + a pure-Rust PDF rasterizer.
 - **Architecture:** DDD / Clean Architecture (ports & adapters).
 - **Zero runtime system deps:** no runtime Tesseract / libtesseract / libleptonica / tessdata, and nothing is shelled out. (Build time needs a C++ compiler + CMake to compile the vendored Tesseract+Leptonica.)
@@ -15,8 +15,8 @@ Working on this Rust MCP server. Read this before making changes.
 
 | Module | Layer | Responsibilities | May depend on |
 |--------|-------|------------------|---------------|
-| `src/domain/` | **Domain** | Entities/value objects (`DocumentKind`, `PdfType`, `ExtractionResult`), domain errors (`ExtractionError`), **ports** (`DocumentExtractor`, `OcrProvider`) | Nothing external |
-| `src/application/` | **Application** | Use cases (`ClassifyDocumentUseCase`, `ExtractDocumentUseCase`): classify → route text vs OCR → merge | Domain ports only |
+| `src/domain/` | **Domain** | Entities/value objects (`DocumentKind` — Pdf/Doc/Docx/Xls/Xlsx/Ppt/Pptx/Odt/Ods/Odp/Rtf/Epub/Csv/Unknown, `PdfType`, `ExtractionResult`), domain errors (`ExtractionError`), **ports** (`DocumentExtractor`, `OcrProvider`, `PdfPageRenderer`) | Nothing external |
+| `src/application/` | **Application** | Use cases (`ClassifyDocumentUseCase`, `ExtractDocumentUseCase`): classify → route (PDF text vs OCR vs non-PDF straight-through `anydoc`) → merge | Domain ports only |
 | `src/infrastructure/` | **Infrastructure** | Adapters implementing ports (`AnyDocExtractor`, `PdfPageRenderer`, plus `TesseractOcrProvider` when `ocr-native` is on / `NoopOcrProvider` when off), file reader, error mapping | Implements domain ports; may import `anydoc`, `pdf-render`, and (only behind `ocr-native`) `tesseract-rs` |
 | `src/interface/` | **Interface** | MCP server (`rmcp` `#[tool]` methods), dual-mode entrypoint (`main.rs`: CLI dispatch vs stdio), CLI (`cli.rs`) | Application use cases |
 
@@ -41,6 +41,8 @@ Working on this Rust MCP server. Read this before making changes.
 - `anydoc`: `anydoc::to_markdown(path)?`, `anydoc::to_markdown_bytes(&bytes, None)?`, `anydoc::to_document(&bytes, None)?`; detection via `Format::from_bytes/from_extension/from_path`. Returns `Err` only when no meaningful Markdown can be produced. **Confirmed as the single primary engine** (empirically: 7/7 real files, incl. legacy `.doc`/`.xls`/`.ppt`); `markitdown-rs` is rejected as primary (quality + robustness + legacy gaps — see SPEC §4.1.1).
 - `rmcp`: `#[tool_router(server_handler)]` + `#[tool(description = "...")]`; `impl` methods take `Parameters<Params>` where `Params: serde::Deserialize + schemars::JsonSchema`; stdio via `Server.serve(stdio()).await?; service.waiting().await?;`.
 - **Dual-mode binary:** `main.rs` dispatches on argv — recognized subcommands (`classify`, `extract`, `extract-text`, `serve`) run the CLI (`interface::cli`), otherwise the MCP stdio server runs. Both share the same use cases and adapters.
+- **Multi-format:** `DocumentKind` is Pdf/Doc/Docx/Xls/Xlsx/Ppt/Pptx/Odt/Ods/Odp/Rtf/Epub/Csv/Unknown. `classify_document`/`extract_document` handle **any** `anydoc`-supported format (via `path` or base64 `bytes`); PDF-specific `classify_pdf`/`extract_pdf`/`extract_pdf_text` remain. **PDF is the only OCR path** — non-PDF formats go straight through `anydoc` (no OCR). CLI `classify`/`extract`/`extract-text` work for any supported format.
+- **`.xls`/`.xlsb` labeling caveat:** legacy binary `.doc`/`.ppt`/`.xls` extract correctly (anydoc/calamine), but `.xls` is labeled `Xlsx` — Excel formats aren't distinguishable from bytes alone.
 - **No OCR in `anydoc`/`pdf-inspector`** — they only extract text from *text-based* PDFs, and neither renders PDF pages to images. OCR goes through the `OcrProvider` port (reference: `TesseractOcrProvider`).
 - **OCR is `tesseract-rs` (embed-tessdata), gated behind the `ocr-native` feature (default OFF):** `tesseract-rs` is an **optional dependency**; the default build is pure-Rust (a `NoopOcrProvider` returns `OcrUnavailable`), and the real `TesseractOcrProvider` is `#[cfg(feature="ocr-native")]`. Tesseract+Leptonica are **vendored and compiled from source at build time**, and `eng`+`rus` tessdata is **embedded into the binary** (`TESSERACT_EMBED_LANGUAGES=eng,rus`; the default `eng,tur` does **not** include Russian). **Gotcha:** `api.init_embedded("eng+rus")` does **NOT** work (the embedded map is keyed per single language → `None` → `InitError`); instead **materialize the embedded bytes into a temp dir** (via `get_embedded_tessdata`/`embedded_languages`) and call `api.init(temp_dir, "eng+rus")?`. `api.try_clone()` enables parallel OCR. The `OcrProvider` consumes **`PageBitmap` values** (`ocr_page(bitmap: &PageBitmap)`) — the renderer+OCR port exchange a `PageBitmap { width, height, bytes_per_pixel, data }` value object so Tesseract's `set_image` gets true geometry (guessing a square page breaks non-square A4 scans). Produced by the `PdfPageRenderer` step (`pdf_render`) that runs *before* OCR (see SPEC §4.4/§9). All of this is infrastructure-layer only and statically links into one self-contained binary.
 - **Renderer is `pdf_render` (finalized):** pure Rust (pdf-interpret + skrifa + ttf-parser + image/png + vello_cpu), statically linkable, no native/-sys deps. Render via `Pdf::new` + `InterpreterSettings` + `RenderSettings { x_scale, y_scale, bg_color }` at scale 300/72; extract grayscale from `pixmap.data_as_u8_slice()` (premultiplied RGBA8 → luma). `Pdf::new` returns `LoadPdfError` (needs `{:?}`, no `Display`). **`rasterrocket` is REJECTED** (native FreeType via pkg-config + openjpeg-sys; dynamically links `libfreetype.so.6`; broken crates.io release).
@@ -90,7 +92,7 @@ Run `cargo fmt`, `cargo clippy` with `-D warnings`, and the 85% coverage gate be
 - [ ] The shipped artifact is a **single self-contained binary** with zero runtime OCR/system deps (no native renderer/OCR libs at runtime); it dynamically links only glibc/libstdc++ — the Docker runtime base must match the builder ABI.
 - [ ] The build (Docker multi-stage) **pre-provisions `rus.traineddata`** and sets `TESSERACT_EMBED_LANGUAGES=eng,rus` + `--features ocr-native`; never rely on the crate's auto-download for `rus`.
 - [ ] Default `cargo build`/`cargo test` stays **pure-Rust** (no C++/CMake) — heavy OCR only behind `ocr-native`.
-- [ ] Round-1 scope is **PDF only** — do not add MS Office handling yet (roadmap only, see SPEC §3.2).
+- [ ] Multi-format extraction (MS Office/ODF/RTF/EPUB/CSV) goes through `anydoc` via the generic `classify_document`/`extract_document`; **PDF is the only OCR path**; `.xls` labels as `Xlsx` (known caveat).
 - [ ] Coverage stays ≥ 85% lines.
 - [ ] Follow the file/module layout in SPEC §5.2; keep domain/application library-agnostic.
 
