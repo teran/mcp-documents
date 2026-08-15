@@ -104,7 +104,8 @@ The MCP server must ship as a **single self-contained binary with ZERO runtime s
 - **Crate:** `tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"] }`.
 - **Engine:** compiles Tesseract + Leptonica from source at **build time** (vendored). Runtime needs **no** system `tesseract` / `libtesseract` / `libleptonica` / `tessdata` — stays a single self-contained binary.
 - **Languages:** embedded at build time via the env var `TESSERACT_EMBED_LANGUAGES=eng,rus cargo build`. The **default is English + Turkish (`eng, tur`) — Russian is NOT included by default**, so the build **MUST set `TESSERACT_EMBED_LANGUAGES=eng,rus`** to support the Russian documents this server targets.
-- **Runtime init — gotcha:** `init_embedded("eng+rus")` does **NOT** work: the embedded tessdata map is keyed **per single language**, so a `"eng+rus"` lookup returns `None` → `InitError`. **Workaround (still zero external runtime deps):** at startup, materialize the embedded bytes (via `get_embedded_tessdata` / `embedded_languages`) into a **temp directory**, then call `init(temp_dir, "eng+rus")`. The bytes come from the embedded binary, not disk/network, so the single-binary / zero-runtime-dep property is preserved. Availability can be queried via `api.embedded_languages()`.
+- **Runtime init — gotcha:** `init_embedded("eng+rus")` does **NOT** work: the embedded tessdata map is keyed **per single language**, so a `"eng+rus"` lookup returns `None` → `InitError`. **Workaround (still zero external runtime deps):** at startup, materialize the embedded bytes (via `get_embedded_tessdata` / `embedded_languages`) into a **stable per-user cache dir**, then call `init(cache_dir, "eng+rus")`. The bytes come from the embedded binary, not disk/network, so the single-binary / zero-runtime-dep property is preserved. Availability can be queried via `api.embedded_languages()`.
+- **Startup cache (fast path):** the `.traineddata` files are treated as a **cache** — written **once** to a stable per-user dir (`$XDG_CACHE_HOME/mcp-documents/tessdata` → `~/.cache/mcp-documents/tessdata` → temp-dir fallback). On subsequent startups the provider only **size-checks** existing files (`metadata().len()` stat), rewriting only if a file is missing or its size differs. This makes server startup fast after the first run (avoids re-extracting eng+rus). Writes are **idempotent + self-healing** via the size check, so no lock is needed (safe under concurrent starts/tests; the old PID-temp-dir collision is gone).
 - **Concurrency:** `api.try_clone()` clones the API for **parallel OCR** — relevant to the `spawn_blocking` / concurrency design (each worker OCRs its own cloned instance).
 - **Build note:** always build in **release mode**; the vendored C++ build is long on first compile (the crate caches compiled libraries for faster subsequent builds). The build runs inside a **Docker multi-stage build** for a portable, reproducible environment (see §4.3.4).
 - **tessdata variant & size:** the crate's `build.rs` downloads **`tessdata_best`** (hardcoded `.../tessdata_best/...` base URL) — the accurate LSTM variant. Measured sizes: `best` eng ≈ 15.4 MB / rus ≈ 15.3 MB (eng+rus ≈ 30.7 MB), vs `fast` eng ≈ 4.1 MB / rus ≈ 3.9 MB (eng+rus ≈ 8 MB). We ship **`tessdata_best`** for OCR accuracy (the Dockerfile provisions it); `tessdata_fast` is the smaller alternative (≈ 22 MB less) if binary size ever becomes critical.
@@ -343,14 +344,16 @@ input: Source (PDF)
 
 **Rules:**
 - If the PDF is fully `TextBased`: skip OCR entirely; return the local extraction.
+- If it is fully `Scanned`/image-only: OCR every page; the result is the OCR'd pages.
 - If it contains scanned pages and **no** OCR provider is configured: return `ExtractionError::OcrUnavailable` (surfaced to the caller as a clear tool-level message) rather than silently dropping content.
-- Page order must be preserved after merging; each page records its `source` (Local | Ocr) for transparency.
+- **Mixed PDFs** preserve **both** the text-layer content and the OCR'd scanned pages, merged into one result: the merged body concatenates the `anydoc` text-layer Markdown **plus** the OCR'd pages (each OCR page recorded individually with `PageSource::Ocr`).
+- **Limitation (anydoc per-page):** `anydoc` returns the **whole document's** Markdown, not per-page text — so exact **page-by-page interleaving** of text pages with OCR pages isn't available. The result is text-layer + OCR pages concatenated, with per-page `source: Ocr` for the OCR'd pages only (the text layer has no per-page breakdown).
 
 **Operational robustness (panic isolation):** document-conversion/parse calls are wrapped in panic isolation (`std::panic::catch_unwind`, per-file / per-request). A single malformed document must **never abort the whole MCP request or process** — the spike proved `pdf-extract`/`cff-parser` can panic on embedded-font PDFs. `anydoc` is the confirmed engine but is still guarded **defensively**, so a panic is translated into a domain error (e.g. `ExtractionError::Internal` / `Malformed`) and a tool-level failure instead of a crash. This isolation is implemented in the infrastructure layer around the conversion call.
 
 **OCR concurrency model:** stdio MCP uses JSON-RPC request-ID multiplexing, so concurrent tool requests are possible in principle; `rmcp` (tokio) can serve them concurrently. The main practical win is **intra-request page-parallel OCR** (many scanned pages of one PDF in parallel) plus handling concurrent requests.
 
-- At startup, **materialize the embedded tessdata bytes into a temp directory** (because `init_embedded("eng+rus")` fails — see §4.3.1), then initialize the Tesseract API **once** with `api.init(temp_dir, "eng+rus")?`.
+- At startup, **materialize the embedded tessdata bytes into a stable per-user cache dir** (because `init_embedded("eng+rus")` fails — see §4.3.1), then initialize the Tesseract API **once** with `api.init(cache_dir, "eng+rus")?`.
 - Maintain a **small pool of `try_clone()` instances**, sized to available CPU cores. Rationale: Tesseract init is expensive (~0.5–1 s), so a clone pool avoids repeated per-page init.
 - Run each OCR through **`tokio::task::spawn_blocking`** — OCR is CPU/IO-blocking and not async-safe on the runtime thread.
 - Merge page results in order after OCR.
@@ -461,9 +464,9 @@ The OCR engine is **vendored/compiled into the binary at build time** and the re
    (anydoc → pdf-inspector)           rasterizer → bitmap)
               │                               │
               │                               ▼
-              │                     OcrProvider (tesseract-rs)
-              │                     (init temp_dir "eng+rus",
-              │                      try_clone per worker)
+               │                     OcrProvider (tesseract-rs)
+               │                     (init cache_dir "eng+rus",
+               │                      try_clone per worker)
               │                               │
               └───────────────┬───────────────┘
                               ▼
@@ -474,9 +477,10 @@ The OCR engine is **vendored/compiled into the binary at build time** and the re
 
 **Design decisions:**
 - The `OcrProvider` **port** keeps OCR pluggable: `TesseractOcrProvider` (tesseract-rs) by default; an `ocrs`-based provider or a stub can be swapped in without touching application logic.
-- The reference `TesseractOcrProvider` uses **`tesseract-rs`** with `embed-tessdata`: Tesseract+Leptonica compiled at build time and **`eng`+`rus` tessdata embedded**. It initializes by **materializing the embedded tessdata into a temp dir and calling `api.init(temp_dir, "eng+rus")?`** (the `init_embedded("eng+rus")` form is broken — see §4.3.1) and consumes a **`PageBitmap`** (`ocr_page(bitmap: &PageBitmap)`), returning text the merge step inserts in page order. No external process is spawned.
+- The reference `TesseractOcrProvider` uses **`tesseract-rs`** with `embed-tessdata`: Tesseract+Leptonica compiled at build time and **`eng`+`rus` tessdata embedded**. It initializes by **materializing the embedded tessdata into a stable per-user cache dir and calling `api.init(cache_dir, "eng+rus")?`** (the `init_embedded("eng+rus")` form is broken — see §4.3.1) and consumes a **`PageBitmap`** (`ocr_page(bitmap: &PageBitmap)`), returning text the merge step inserts in page order. No external process is spawned.
 - **PDF page → image rendering** is a separate concern performed *before* OCR, behind the `PdfPageRenderer` port: for each `pages_needing_ocr` page, render it to a **grayscale (or grayscale-capable) bitmap at ~300 DPI** and feed it to OCR. The renderer is **`pdf_render`** (pure Rust, no native deps) so the binary stays self-contained.
 - **Concurrency:** OCR is CPU-bound and runs in `spawn_blocking` workers drawn from a **pool of `try_clone()` instances** (sized to CPU cores) for **page-parallel OCR** across a PDF and across concurrent requests.
+- **Mixed-PDF merge:** for a Mixed PDF the result preserves **both** the text-layer content and the OCR'd pages (concatenated; OCR pages recorded with `PageSource::Ocr`). Because `anydoc` returns whole-document Markdown (not per-page), exact text-page/OCR-page interleaving isn't available — see §7.2.
 - The renderer + OCR provider are both infrastructure-only; because both are injected and isolated behind ports, swapping implementations is a pure infrastructure change.
 - If OCR is unavailable for a scanned doc, fail **explicitly** (`OcrUnavailable`), never silently return partial/empty content.
 
@@ -504,6 +508,7 @@ The 85% target is a **whole-repo** line-coverage goal, achieved by testing each 
 
 - `AnyDocExtractor`, `TesseractOcrProvider`, and the `PdfPageRenderer` impl tested against **fixture documents** in `tests/fixtures/` (a text-based PDF, a scanned PDF, a mixed PDF, a malformed file, an encrypted file, an oversized input).
 - Because OCR uses `tesseract-rs` with **embedded tessdata** (no runtime system dependencies), these integration tests **run normally on any machine** — they are **not** skipped for lack of a system Tesseract. (Note: they exercise the real OCR path, so the build must have embedded `eng`+`rus` tessdata.)
+- **`ocr-native` integration test:** `tests/ocr_native.rs` (gated `#![cfg(feature="ocr-native")]`) runs the real `TesseractOcrProvider` + `PdfPageRenderer` on a rendered page (a **synthetic scanned page** with no text layer, so it genuinely requires OCR) and asserts non-empty Cyrillic-capable OCR.
 - These assert real conversion/OCR behavior and correct error mapping end-to-end.
 - Small synthetic PDF fixtures are committed; large or generated ones are produced by a test helper to keep the repo lean.
 
@@ -537,7 +542,7 @@ A minimal CI pipeline should run on every PR/merge to the default branch. The **
 3. `cargo test`
 4. `cargo llvm-cov --fail-under-lines 85`
 
-The **85% line-coverage gate runs on the Docker/CI build with `ocr-native` ON, on a bare runner** (no runtime OCR packages). (Note: the vendored C++ build is slow on first compile — cache the compiled libraries / Docker builder layers between runs.)
+The **85% line-coverage gate runs on BOTH builds**: the default (pure-Rust) build and the Docker/CI `ocr-native` build, both on a bare runner (no runtime OCR packages). Measured: **default 91.9%**, **ocr-native 91.3%** — both comfortably ≥ 85%. (Note: the vendored C++ build is slow on first compile — cache the compiled libraries / Docker builder layers between runs.)
 
 Artifacts: coverage report; fail the build if the 85% line gate is not met.
 
@@ -575,9 +580,9 @@ cargo add --dev tokio-test
 ## 15. Open Questions
 
 - **Renderer:** **DECIDED** — `pdf_render` is the chosen PDF page → image renderer (see §4.4); `rasterrocket` is rejected (native FreeType/OpenJPEG + broken crates.io), and `mupdf`/`pdfium-render` remain dropped. No longer open.
-- **`rus` embedding + Cyrillic accuracy:** **VERIFIED working** — the Docker build (`--features ocr-native`) embeds `eng`+`rus`, the temp-dir `init` workaround works end-to-end, and a real scanned Russian receipt PDF produced correct Cyrillic OCR (~1356 chars). The `init_embedded("eng+rus")` gotcha remains documented (§4.3.1). OCR quality still depends on scan quality; the **`tessdata_best` vs `fast`** size/accuracy tradeoff remains (see below).
+- **`rus` embedding + Cyrillic accuracy:** **VERIFIED working** — the Docker build (`--features ocr-native`) embeds `eng`+`rus`, the cache-dir `init` workaround (with size-check fast path) works end-to-end, and a real scanned Russian receipt PDF produced correct Cyrillic OCR (~1356 chars). The `init_embedded("eng+rus")` gotcha remains documented (§4.3.1). OCR quality still depends on scan quality; the **`tessdata_best` vs `fast`** size/accuracy tradeoff remains (see below).
 - **Binary size / tessdata variant:** **DECIDED — ship `tessdata_best`** for OCR accuracy. The Dockerfile provisions `tessdata_best` (eng+rus ≈ 30.7 MB, ~22 MB over `fast`); the resulting single binary is ~50–72 MB, which is acceptable. `tessdata_fast` remains the smaller fallback (≈ 8 MB eng+rus) if binary size matters later (see §4.3.1).
-- **OCR concurrency:** confirm the clone-pool sizing (cores) and whether the R1 per-request-init fallback suffices vs the recommended pool (see §7.2).
+- **OCR concurrency:** **RESOLVED for R1** — the `ocr-native` build passes the 85% gate (91.3%), and the clone-pool + `spawn_blocking` design is implemented (§7.2/§9). Minor remaining item: confirm clone-pool sizing (cores) vs the per-request-init fallback for production tuning.
 - **OCR image preparation:** exact page→image parameters (resolution ~300 DPI, grayscale via `pixmap.data_as_u8_slice()` → luma) — validated by the renderer spike.
 - **CLI vs MCP-only:** **DECIDED** — the binary ships **both**: MCP stdio server (default) and a standalone CLI (`classify`/`extract`/`extract-text`/`serve`), dispatched in `main.rs` (see §8.4). No longer open.
 - **`extract_document` / `classify_document` exposure:** **DECIDED** — the generic tools are shipped alongside the PDF-specific ones (§8.2). No longer open.
