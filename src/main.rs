@@ -68,6 +68,7 @@ mod tests {
 
     /// With OCR disabled (default build), the provider built at startup is a
     /// stub that reports OCR unavailable rather than panicking.
+    #[cfg(not(feature = "ocr-native"))]
     #[test]
     fn build_ocr_default_build_is_noop_provider() {
         let ocr = build_ocr().unwrap();
@@ -77,5 +78,16 @@ mod tests {
             err,
             mcp_documents::domain::error::ExtractionError::OcrUnavailable(_)
         ));
+    }
+
+    /// With OCR enabled, startup builds a real provider (initializes eng+rus).
+    #[cfg(feature = "ocr-native")]
+    #[test]
+    fn build_ocr_native_build_produces_provider() {
+        let ocr = build_ocr().expect("OCR engine should initialize");
+        assert!(
+            ocr.ocr_page(&PageBitmap::new(4, 4, 1, vec![255; 16]).unwrap())
+                .is_ok()
+        );
     }
 }

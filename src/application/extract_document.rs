@@ -57,8 +57,16 @@ impl ExtractDocumentUseCase {
             return self.extractor.extract_text(source);
         }
 
-        // Scanned/image pages present: render + OCR them, then merge.
-        self.extract_with_ocr(source, classification.pdf_type, &ocr_pages)
+        // Does the PDF also contain text-based pages (i.e. is it Mixed)? If
+        // every page is scanned there is no text layer to preserve.
+        let has_text_pages = classification
+            .pages_needing_ocr
+            .iter()
+            .any(|p| !p.needs_ocr);
+
+        // Scanned/image pages present: render + OCR them, then merge with any
+        // text-layer content.
+        self.extract_with_ocr(source, classification.pdf_type, &ocr_pages, has_text_pages)
             .await
     }
 
@@ -67,9 +75,10 @@ impl ExtractDocumentUseCase {
         source: &Source,
         pdf_type: Option<PdfType>,
         ocr_pages: &[PageClassification],
+        has_text_pages: bool,
     ) -> Result<ExtractionResult, ExtractionError> {
         let pdf_bytes = source.read_bytes()?;
-        let mut pages = Vec::with_capacity(ocr_pages.len());
+        let mut ocr_entries = Vec::with_capacity(ocr_pages.len());
 
         for pc in ocr_pages {
             let idx = pc.page_index;
@@ -89,15 +98,65 @@ impl ExtractDocumentUseCase {
                 .await
                 .map_err(|e| ExtractionError::Internal(format!("ocr task failed: {e}")))??;
 
-            pages.push(ExtractedPage::ocr(idx, text));
+            ocr_entries.push(ExtractedPage::ocr(idx, text));
         }
 
-        // Merge preserves page order and records each page's source.
-        Ok(ExtractionResult::from_pages(
+        // For a Mixed PDF also preserve the text-based layer. anydoc returns the
+        // whole document's Markdown (not per-page), so exact page interleaving
+        // is unavailable — we keep the text layer alongside the OCR'd pages.
+        let local_markdown = if has_text_pages {
+            let local = self.extractor.extract_text(source)?;
+            local.markdown
+        } else {
+            String::new()
+        };
+
+        Ok(merge_mixed(
             DocumentKind::Pdf,
             pdf_type,
-            pages,
+            &local_markdown,
+            ocr_entries,
         ))
+    }
+}
+
+/// Merge the local (text-layer) content with OCR'd pages for a mixed PDF.
+///
+/// # Limitation
+/// `anydoc` returns the **whole document's** Markdown rather than per-page
+/// text, so exact page-by-page interleaving of the text layer with the OCR'd
+/// pages is not available in this pipeline. This function produces a
+/// pragmatic, coherent result: the text-layer Markdown is placed first,
+/// followed by the OCR'd pages (in ascending page order), and each OCR'd page
+/// is recorded individually with `PageSource::Ocr`. The text layer is
+/// represented in the merged body (it has no per-page breakdown from `anydoc`),
+/// so it is not emitted as individual `ExtractedPage` entries.
+pub fn merge_mixed(
+    kind: DocumentKind,
+    pdf_type: Option<PdfType>,
+    local_markdown: &str,
+    ocr_pages: Vec<ExtractedPage>,
+) -> ExtractionResult {
+    let mut parts: Vec<String> = Vec::new();
+    let local = local_markdown.trim();
+    if !local.is_empty() {
+        parts.push(local.to_string());
+    }
+
+    let mut ocr_sorted = ocr_pages.clone();
+    ocr_sorted.sort_by_key(|p| p.page_index);
+    for p in &ocr_sorted {
+        let t = p.text.trim();
+        if !t.is_empty() {
+            parts.push(t.to_string());
+        }
+    }
+
+    ExtractionResult {
+        kind,
+        pdf_type,
+        markdown: parts.join("\n\n"),
+        pages: ocr_pages,
     }
 }
 
@@ -252,15 +311,116 @@ mod tests {
         assert_eq!(out.pages[0].text, "ocr-text-1");
         assert_eq!(out.pages[1].page_index, 2);
         assert_eq!(out.pages[1].text, "ocr-text-2");
-        // Merged body preserves order.
-        assert_eq!(out.markdown, "ocr-text-1\n\nocr-text-2");
+        // Merged body: text layer (page 0 is text) then OCR pages.
+        assert_eq!(out.markdown, "local body\n\nocr-text-1\n\nocr-text-2");
+    }
+
+    #[tokio::test]
+    async fn mixed_pdf_keeps_text_layer_and_ocr_pages() {
+        // Pages 0 and 2 are text-based; pages 1 and 3 need OCR -> Mixed.
+        let extractor = FakeExtractor {
+            classification: Some(Classification {
+                kind: DocumentKind::Pdf,
+                pdf_type: Some(PdfType::Mixed),
+                pages_needing_ocr: (0..4)
+                    .map(|i| PageClassification::new(i, i == 1 || i == 3, 0.9))
+                    .collect(),
+            }),
+            local_result: Some(ExtractionResult::markdown_only(
+                DocumentKind::Pdf,
+                Some(PdfType::Mixed),
+                "text layer content".into(),
+            )),
+        };
+        let uc = ExtractDocumentUseCase::new(
+            Arc::new(extractor),
+            Arc::new(FakeOcr::new(false)),
+            Arc::new(FakeRenderer),
+        );
+        let out = uc.extract(&Source::Bytes(vec![9])).await.unwrap();
+
+        // BOTH the text-layer content and the OCR'd pages must be present, in
+        // a coherent merged body (text layer first, then OCR pages in order).
+        assert!(out.markdown.contains("text layer content"));
+        assert!(out.markdown.contains("ocr-text-1"));
+        assert!(out.markdown.contains("ocr-text-3"));
+        // OCR pages are recorded per-page with PageSource::Ocr.
+        assert_eq!(out.pages.len(), 2);
+        assert!(out.pages.iter().all(|p| p.source == PageSource::Ocr));
+        assert_eq!(
+            out.markdown,
+            "text layer content\n\nocr-text-1\n\nocr-text-3"
+        );
+    }
+
+    #[tokio::test]
+    async fn fully_scanned_pdf_uses_only_ocr() {
+        // Every page needs OCR -> no text layer to preserve.
+        let extractor = FakeExtractor {
+            classification: Some(Classification {
+                kind: DocumentKind::Pdf,
+                pdf_type: Some(PdfType::Scanned),
+                pages_needing_ocr: (0..3)
+                    .map(|i| PageClassification::new(i, true, 1.0))
+                    .collect(),
+            }),
+            local_result: Some(ExtractionResult::markdown_only(
+                DocumentKind::Pdf,
+                Some(PdfType::Scanned),
+                "should not appear".into(),
+            )),
+        };
+        let uc = ExtractDocumentUseCase::new(
+            Arc::new(extractor),
+            Arc::new(FakeOcr::new(false)),
+            Arc::new(FakeRenderer),
+        );
+        let out = uc.extract(&Source::Bytes(vec![9])).await.unwrap();
+
+        assert_eq!(out.markdown, "ocr-text-0\n\nocr-text-1\n\nocr-text-2");
+        assert!(!out.markdown.contains("should not appear"));
+        assert_eq!(out.pages.len(), 3);
+    }
+
+    #[test]
+    fn merge_mixed_prepends_text_layer_and_orders_ocr() {
+        let ocr_pages = vec![
+            ExtractedPage::ocr(2, "ocr-two"),
+            ExtractedPage::ocr(0, "ocr-zero"),
+        ];
+        let out = merge_mixed(
+            DocumentKind::Pdf,
+            Some(PdfType::Mixed),
+            "text layer",
+            ocr_pages,
+        );
+        // Text layer first, then OCR pages in page order (0 before 2).
+        assert_eq!(out.markdown, "text layer\n\nocr-zero\n\nocr-two");
+        // OCR pages recorded per-page.
+        assert_eq!(out.pages.len(), 2);
+        assert_eq!(out.pages[0].page_index, 2);
+    }
+
+    #[test]
+    fn merge_mixed_without_text_layer_just_joins_ocr() {
+        let out = merge_mixed(
+            DocumentKind::Pdf,
+            Some(PdfType::Scanned),
+            "   ",
+            vec![ExtractedPage::ocr(0, "only-ocr")],
+        );
+        assert_eq!(out.markdown, "only-ocr");
     }
 
     #[tokio::test]
     async fn non_square_bitmap_dimensions_pass_through_to_ocr() {
         let extractor = FakeExtractor {
             classification: Some(classification_with(&[0])),
-            local_result: None,
+            local_result: Some(ExtractionResult::markdown_only(
+                DocumentKind::Pdf,
+                Some(PdfType::Mixed),
+                "local".into(),
+            )),
         };
         let ocr = FakeOcr::new(false);
         let uc = ExtractDocumentUseCase::new(
