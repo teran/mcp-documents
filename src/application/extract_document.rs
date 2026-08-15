@@ -38,6 +38,13 @@ impl ExtractDocumentUseCase {
     /// Extract a document, routing pages and merging results.
     pub async fn extract(&self, source: &Source) -> Result<ExtractionResult, ExtractionError> {
         let classification = self.extractor.classify(source)?;
+
+        // Non-PDF kinds (doc/docx/xls/xlsx/ppt/pptx/odf/rtf/epub/csv) go
+        // straight through anydoc — no OCR, no rendering.
+        if classification.kind != DocumentKind::Pdf {
+            return self.extractor.extract_text(source);
+        }
+
         let ocr_pages: Vec<PageClassification> = classification
             .pages_needing_ocr
             .iter()
@@ -193,6 +200,33 @@ mod tests {
             Arc::new(FakeOcr::new(false)),
             Arc::new(FakeRenderer),
         )
+    }
+
+    #[tokio::test]
+    async fn non_pdf_routes_to_extract_text_without_ocr() {
+        // Classified as a non-PDF kind: must go straight to extract_text and
+        // never touch render/OCR (which would fail here if called).
+        let extractor = FakeExtractor {
+            classification: Some(Classification {
+                kind: DocumentKind::Docx,
+                pdf_type: None,
+                pages_needing_ocr: Vec::new(),
+            }),
+            local_result: Some(ExtractionResult::markdown_only(
+                DocumentKind::Docx,
+                None,
+                "docx body".into(),
+            )),
+        };
+        let uc = ExtractDocumentUseCase::new(
+            Arc::new(extractor),
+            Arc::new(FakeOcr::new(false)),
+            Arc::new(FakeRenderer),
+        );
+        let out = uc.extract(&Source::Bytes(vec![9, 9, 9])).await.unwrap();
+        assert_eq!(out.markdown, "docx body");
+        assert_eq!(out.kind, DocumentKind::Docx);
+        assert!(out.pages.is_empty());
     }
 
     #[tokio::test]

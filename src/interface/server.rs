@@ -9,7 +9,7 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use crate::application::{ClassifyDocumentUseCase, ExtractDocumentUseCase};
 
 use super::tools::{
-    source_from_params, ClassifyParams, ExtractParams, json_result, text_result, tool_error,
+    ClassifyParams, ExtractParams, json_result, source_from_params, text_result, tool_error,
 };
 
 /// The MCP server exposing document tools over stdio.
@@ -79,6 +79,56 @@ impl DocumentsServer {
     /// Extract a PDF to plain text (local extraction + OCR for scanned pages).
     #[tool(description = "Extract plain text from a PDF (with OCR for scanned pages)")]
     async fn extract_pdf_text(
+        &self,
+        Parameters(params): Parameters<ExtractParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(tool_error(&e)),
+        };
+        match self.extract.extract(&source).await {
+            Ok(result) => Ok(text_result(result.markdown)),
+            Err(e) => Ok(tool_error(&e)),
+        }
+    }
+
+    /// Classify any supported document (PDF, doc/docx, xls/xlsx, ppt/pptx,
+    /// odf, rtf, epub, csv), returning its kind and (for PDFs) OCR routing.
+    #[tool(
+        description = "Classify any supported document, returning its kind and (for PDFs) pages needing OCR"
+    )]
+    async fn classify_document(
+        &self,
+        Parameters(params): Parameters<ClassifyParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+            Ok(s) => s,
+            Err(e) => return Ok(tool_error(&e)),
+        };
+        match self.classify.classify(&source) {
+            Ok(c) => Ok(json_result(rmcp::serde_json::json!({
+                "kind": c.kind.as_str(),
+                "pdf_type": c.pdf_type.map(|t| format!("{t:?}")),
+                "pages_needing_ocr": c.pages_needing_ocr
+                    .iter()
+                    .map(|p| rmcp::serde_json::json!({
+                        "page_index": p.page_index,
+                        "needs_ocr": p.needs_ocr,
+                        "confidence": p.confidence,
+                    }))
+                    .collect::<Vec<_>>(),
+            }))),
+            Err(e) => Ok(tool_error(&e)),
+        }
+    }
+
+    /// Extract Markdown from any supported document (PDF, doc/docx, xls/xlsx,
+    /// ppt/pptx, odf, rtf, epub, csv). PDFs use local extraction + OCR for
+    /// scanned pages; non-PDF kinds go straight through the conversion engine.
+    #[tool(
+        description = "Extract Markdown from any supported document (PDF or Office/etc.); OCR is applied to scanned PDF pages"
+    )]
+    async fn extract_document(
         &self,
         Parameters(params): Parameters<ExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -251,6 +301,55 @@ mod tests {
         let res = s
             .extract_pdf(Parameters(ExtractParams {
                 path: "bad.pdf".into(),
+                bytes: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+        assert!(
+            res.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("unsupported")
+        );
+    }
+
+    #[tokio::test]
+    async fn classify_document_success_returns_json() {
+        let s = server(false, false);
+        let res = s
+            .classify_document(Parameters(ClassifyParams {
+                path: "doc.docx".into(),
+                bytes: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(false));
+        let text = res.content[0].as_text().unwrap().text.clone();
+        assert!(text.contains("\"kind\": \"pdf\""));
+    }
+
+    #[tokio::test]
+    async fn extract_document_success_returns_text() {
+        let s = server(false, false);
+        let res = s
+            .extract_document(Parameters(ExtractParams {
+                path: "doc.docx".into(),
+                bytes: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(false));
+        assert_eq!(res.content[0].as_text().unwrap().text, "extracted markdown");
+    }
+
+    #[tokio::test]
+    async fn extract_document_error_is_tool_error() {
+        let s = server(false, true);
+        let res = s
+            .extract_document(Parameters(ExtractParams {
+                path: "bad.docx".into(),
                 bytes: None,
             }))
             .await

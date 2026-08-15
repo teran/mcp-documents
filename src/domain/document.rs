@@ -1,14 +1,36 @@
 //! Entities and value objects describing documents.
 
 /// The family of document a file belongs to.
-///
-/// Round 1 only supports [`DocumentKind::Pdf`]; Round 2 widens this to MS
-/// Office and other formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DocumentKind {
     /// Portable Document Format.
     Pdf,
-    // Round 2: Docx, Xlsx, Pptx, Odf, Rtf, Epub, Csv, ...
+    /// Word 97–2003 (binary `.doc`).
+    Doc,
+    /// WordprocessingML (`.docx`, `.docm`).
+    Docx,
+    /// Excel 97–2003 (binary `.xls`).
+    Xls,
+    /// SpreadsheetML (`.xlsx`, `.xlsm`, `.xlsb`).
+    Xlsx,
+    /// PowerPoint 97–2003 (binary `.ppt`, `.pps`, `.pot`).
+    Ppt,
+    /// PresentationML (`.pptx`, `.pptm`, `.ppsx`, `.ppsm`).
+    Pptx,
+    /// OpenDocument Text (`.odt`).
+    Odt,
+    /// OpenDocument Spreadsheet (`.ods`).
+    Ods,
+    /// OpenDocument Presentation (`.odp`).
+    Odp,
+    /// Rich Text Format (`.rtf`).
+    Rtf,
+    /// EPUB 2 and 3 (`.epub`).
+    Epub,
+    /// Delimiter-separated text (`.csv`).
+    Csv,
+    /// A document whose kind could not be determined.
+    Unknown,
 }
 
 impl DocumentKind {
@@ -16,6 +38,19 @@ impl DocumentKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             DocumentKind::Pdf => "pdf",
+            DocumentKind::Doc => "doc",
+            DocumentKind::Docx => "docx",
+            DocumentKind::Xls => "xls",
+            DocumentKind::Xlsx => "xlsx",
+            DocumentKind::Ppt => "ppt",
+            DocumentKind::Pptx => "pptx",
+            DocumentKind::Odt => "odt",
+            DocumentKind::Ods => "ods",
+            DocumentKind::Odp => "odp",
+            DocumentKind::Rtf => "rtf",
+            DocumentKind::Epub => "epub",
+            DocumentKind::Csv => "csv",
+            DocumentKind::Unknown => "unknown",
         }
     }
 }
@@ -89,6 +124,19 @@ mod tests {
     #[test]
     fn document_kind_as_str() {
         assert_eq!(DocumentKind::Pdf.as_str(), "pdf");
+        assert_eq!(DocumentKind::Doc.as_str(), "doc");
+        assert_eq!(DocumentKind::Docx.as_str(), "docx");
+        assert_eq!(DocumentKind::Xls.as_str(), "xls");
+        assert_eq!(DocumentKind::Xlsx.as_str(), "xlsx");
+        assert_eq!(DocumentKind::Ppt.as_str(), "ppt");
+        assert_eq!(DocumentKind::Pptx.as_str(), "pptx");
+        assert_eq!(DocumentKind::Odt.as_str(), "odt");
+        assert_eq!(DocumentKind::Ods.as_str(), "ods");
+        assert_eq!(DocumentKind::Odp.as_str(), "odp");
+        assert_eq!(DocumentKind::Rtf.as_str(), "rtf");
+        assert_eq!(DocumentKind::Epub.as_str(), "epub");
+        assert_eq!(DocumentKind::Csv.as_str(), "csv");
+        assert_eq!(DocumentKind::Unknown.as_str(), "unknown");
     }
 
     #[test]

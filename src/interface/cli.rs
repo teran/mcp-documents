@@ -126,23 +126,38 @@ mod tests {
     use crate::domain::ports::{DocumentExtractor, OcrProvider, PdfPageRenderer};
     use crate::domain::result::{ExtractionResult, PageBitmap, Source};
 
-    /// Fake extractor classifying input as a text-based PDF.
-    #[derive(Clone, Default)]
-    struct FakeExtractor;
+    /// Fake extractor classifying input as the given kind.
+    #[derive(Clone)]
+    struct FakeExtractor {
+        kind: DocumentKind,
+    }
+
+    impl Default for FakeExtractor {
+        fn default() -> Self {
+            Self {
+                kind: DocumentKind::Pdf,
+            }
+        }
+    }
 
     impl DocumentExtractor for FakeExtractor {
         fn classify(&self, _source: &Source) -> Result<Classification, ExtractionError> {
+            let pdf_type = if self.kind == DocumentKind::Pdf {
+                Some(PdfType::TextBased)
+            } else {
+                None
+            };
             Ok(Classification {
-                kind: DocumentKind::Pdf,
-                pdf_type: Some(PdfType::TextBased),
+                kind: self.kind,
+                pdf_type,
                 pages_needing_ocr: Vec::new(),
             })
         }
 
         fn extract_text(&self, _source: &Source) -> Result<ExtractionResult, ExtractionError> {
             Ok(ExtractionResult::markdown_only(
-                DocumentKind::Pdf,
-                Some(PdfType::TextBased),
+                self.kind,
+                None,
                 "cli markdown".into(),
             ))
         }
@@ -167,11 +182,15 @@ mod tests {
         }
     }
 
-    fn use_cases() -> (ClassifyDocumentUseCase, ExtractDocumentUseCase) {
-        let ext = Arc::new(FakeExtractor);
+    fn use_cases_with(kind: DocumentKind) -> (ClassifyDocumentUseCase, ExtractDocumentUseCase) {
+        let ext = Arc::new(FakeExtractor { kind });
         let classify = ClassifyDocumentUseCase::new(ext.clone());
         let extract = ExtractDocumentUseCase::new(ext, Arc::new(FakeOcr), Arc::new(FakeRenderer));
         (classify, extract)
+    }
+
+    fn use_cases() -> (ClassifyDocumentUseCase, ExtractDocumentUseCase) {
+        use_cases_with(DocumentKind::Pdf)
     }
 
     #[tokio::test]
@@ -190,6 +209,20 @@ mod tests {
         ] {
             assert!(run_cli(&cmd, &classify, &extract).await.is_ok());
         }
+    }
+
+    #[tokio::test]
+    async fn run_cli_classify_non_pdf_ok() {
+        let (classify, extract) = use_cases_with(DocumentKind::Docx);
+        let cmd = CliCommand::Classify(PathBuf::from("b.docx"));
+        assert!(run_cli(&cmd, &classify, &extract).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_cli_extract_non_pdf_ok() {
+        let (classify, extract) = use_cases_with(DocumentKind::Xlsx);
+        let cmd = CliCommand::Extract(PathBuf::from("c.xlsx"));
+        assert!(run_cli(&cmd, &classify, &extract).await.is_ok());
     }
 
     #[tokio::test]

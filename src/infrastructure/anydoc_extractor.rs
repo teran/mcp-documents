@@ -1,10 +1,12 @@
 //! `AnyDocExtractor` — implements [`DocumentExtractor`] using `anydoc`.
 //!
 //! `anydoc` extracts Markdown from text-based PDFs (via `pdf-inspector`
-//! internally). It does **not** perform OCR and does **not** render pages, so
-//! classification here is a light heuristic: if a text layer is present the
-//! document is `TextBased`; if `anydoc` reports the PDF as unsupported (i.e.
-//! image-only), it is treated as `Scanned` and routed to OCR.
+//! internally) and from MS Office / ODF / RTF / EPUB / CSV documents. It does
+//! **not** perform OCR and does **not** render pages, so PDF classification
+//! here is a light heuristic: if a text layer is present the PDF is
+//! `TextBased`; if `anydoc` reports the PDF as unsupported (i.e. image-only),
+//! it is treated as `Scanned` and routed to OCR. Non-PDF kinds have no PDF
+//! classification and go straight through `anydoc`.
 
 use std::sync::Arc;
 
@@ -19,6 +21,28 @@ use crate::domain::result::{ExtractionResult, Source};
 use super::error_map::{map_convert_error, map_load_pdf_error};
 use super::file_reader::read_source_bytes;
 
+/// Map an `anydoc::Format` onto a [`DocumentKind`].
+///
+/// `Format::Excel` covers `.xls`/`.xlsx`/`.xlsm`/`.xlsb` (calamine reads them
+/// all) and is reported here as [`DocumentKind::Xlsx`], the dominant modern
+/// variant — see the module note for the legacy `.xls` caveat.
+pub fn format_to_kind(fmt: Format) -> DocumentKind {
+    match fmt {
+        Format::Pdf => DocumentKind::Pdf,
+        Format::Doc => DocumentKind::Doc,
+        Format::Docx => DocumentKind::Docx,
+        Format::Excel => DocumentKind::Xlsx,
+        Format::Ppt => DocumentKind::Ppt,
+        Format::Pptx => DocumentKind::Pptx,
+        Format::Odt => DocumentKind::Odt,
+        Format::Ods => DocumentKind::Ods,
+        Format::Odp => DocumentKind::Odp,
+        Format::Rtf => DocumentKind::Rtf,
+        Format::Epub => DocumentKind::Epub,
+        Format::Csv => DocumentKind::Csv,
+    }
+}
+
 /// Adapter that classifies and extracts documents using `anydoc`.
 #[derive(Default)]
 pub struct AnyDocExtractor {}
@@ -29,13 +53,9 @@ impl AnyDocExtractor {
         Self {}
     }
 
-    /// Detect the document kind from content. Round 1 is PDF-only.
-    fn detect_kind(&self, bytes: &[u8]) -> Result<DocumentKind, ExtractionError> {
-        match Format::from_bytes(bytes) {
-            Some(Format::Pdf) => Ok(DocumentKind::Pdf),
-            // Round 1 only supports PDF (unrecognized content or other formats).
-            _ => Err(ExtractionError::Unsupported(DocumentKind::Pdf)),
-        }
+    /// Detect the document format from content.
+    fn detect_format(&self, bytes: &[u8]) -> Result<Format, ExtractionError> {
+        Format::from_bytes(bytes).ok_or(ExtractionError::Unsupported(DocumentKind::Unknown))
     }
 
     /// Count pages in a PDF using the pure-Rust parser.
@@ -62,19 +82,15 @@ impl AnyDocExtractor {
             )),
         }
     }
-}
 
-impl DocumentExtractor for AnyDocExtractor {
-    fn classify(&self, source: &Source) -> Result<Classification, ExtractionError> {
-        let bytes = read_source_bytes(source)?;
-        let kind = self.detect_kind(&bytes)?;
-
-        let page_count = self.page_count(&bytes)?;
-        let has_text_layer = self.probe_text(&bytes)?.is_some();
+    /// Classify a PDF (PdfType + pages needing OCR) using the light heuristic.
+    fn classify_pdf(&self, bytes: &[u8]) -> Result<Classification, ExtractionError> {
+        let page_count = self.page_count(bytes)?;
+        let has_text_layer = self.probe_text(bytes)?.is_some();
 
         if has_text_layer {
             return Ok(Classification {
-                kind,
+                kind: DocumentKind::Pdf,
                 pdf_type: Some(PdfType::TextBased),
                 pages_needing_ocr: Vec::new(),
             });
@@ -85,18 +101,44 @@ impl DocumentExtractor for AnyDocExtractor {
             .map(|i| PageClassification::new(i, true, 1.0))
             .collect();
         Ok(Classification {
-            kind,
+            kind: DocumentKind::Pdf,
             pdf_type: Some(PdfType::Scanned),
             pages_needing_ocr: pages,
+        })
+    }
+}
+
+impl DocumentExtractor for AnyDocExtractor {
+    fn classify(&self, source: &Source) -> Result<Classification, ExtractionError> {
+        let bytes = read_source_bytes(source)?;
+        let format = self.detect_format(&bytes)?;
+
+        if format == Format::Pdf {
+            return self.classify_pdf(&bytes);
+        }
+
+        // Non-PDF kinds have no per-page/OCR classification.
+        Ok(Classification {
+            kind: format_to_kind(format),
+            pdf_type: None,
+            pages_needing_ocr: Vec::new(),
         })
     }
 
     fn extract_text(&self, source: &Source) -> Result<ExtractionResult, ExtractionError> {
         let bytes = read_source_bytes(source)?;
-        let kind = self.detect_kind(&bytes)?;
+        let format = self.detect_format(&bytes)?;
+        let kind = format_to_kind(format);
+        // PDF-specific type is only meaningful for PDFs.
+        let pdf_type = if kind == DocumentKind::Pdf {
+            Some(PdfType::TextBased)
+        } else {
+            None
+        };
 
-        let result =
-            std::panic::catch_unwind(|| anydoc::to_markdown_bytes(&bytes, Some(Format::Pdf)));
+        // Let anydoc auto-detect the parser from content (None). Wrapped in
+        // panic isolation so a malformed document becomes a domain error.
+        let result = std::panic::catch_unwind(|| anydoc::to_markdown_bytes(&bytes, None));
         let markdown = match result {
             Ok(Ok(text)) => text,
             Ok(Err(e)) => return Err(map_convert_error(e)),
@@ -107,11 +149,7 @@ impl DocumentExtractor for AnyDocExtractor {
             }
         };
 
-        Ok(ExtractionResult::markdown_only(
-            kind,
-            Some(PdfType::TextBased),
-            markdown,
-        ))
+        Ok(ExtractionResult::markdown_only(kind, pdf_type, markdown))
     }
 }
 
@@ -125,9 +163,7 @@ mod tests {
     use super::*;
 
     fn text_pdf_bytes() -> Vec<u8> {
-        // A minimal PDF with a text layer, built with pdf-render's test approach
-        // is heavy; instead we craft a tiny but valid PDF with an invisible text
-        // object. Content stream draws "Hello".
+        // A minimal PDF with a text layer.
         let content = "BT /F1 12 Tf 72 712 Td (Hello World) Tj ET";
         let content_id = 4;
         let mut pdf = String::new();
@@ -145,11 +181,27 @@ mod tests {
     }
 
     #[test]
-    fn detects_pdf_kind() {
+    fn format_to_kind_maps_all_formats() {
+        assert_eq!(format_to_kind(Format::Pdf), DocumentKind::Pdf);
+        assert_eq!(format_to_kind(Format::Doc), DocumentKind::Doc);
+        assert_eq!(format_to_kind(Format::Docx), DocumentKind::Docx);
+        assert_eq!(format_to_kind(Format::Excel), DocumentKind::Xlsx);
+        assert_eq!(format_to_kind(Format::Ppt), DocumentKind::Ppt);
+        assert_eq!(format_to_kind(Format::Pptx), DocumentKind::Pptx);
+        assert_eq!(format_to_kind(Format::Odt), DocumentKind::Odt);
+        assert_eq!(format_to_kind(Format::Ods), DocumentKind::Ods);
+        assert_eq!(format_to_kind(Format::Odp), DocumentKind::Odp);
+        assert_eq!(format_to_kind(Format::Rtf), DocumentKind::Rtf);
+        assert_eq!(format_to_kind(Format::Epub), DocumentKind::Epub);
+        assert_eq!(format_to_kind(Format::Csv), DocumentKind::Csv);
+    }
+
+    #[test]
+    fn detect_format_detects_pdf_and_rejects_garbage() {
         let e = AnyDocExtractor::new();
-        assert_eq!(e.detect_kind(&text_pdf_bytes()).unwrap(), DocumentKind::Pdf);
+        assert_eq!(e.detect_format(&text_pdf_bytes()).unwrap(), Format::Pdf);
         assert!(matches!(
-            e.detect_kind(b"not a document at all"),
+            e.detect_format(b"not a document at all"),
             Err(ExtractionError::Unsupported(_))
         ));
     }
@@ -159,9 +211,8 @@ mod tests {
         let e = AnyDocExtractor::new();
         // The hand-rolled PDF above may or may not pass pdf-inspector's strict
         // structure checks; what matters is the path returns a *domain* outcome
-        // (success or a mapped domain error) and never leaks anydoc's error type
-        // or panics. Real success is exercised by the committed fixture in
-        // tests/fixtures/simple_text.pdf.
+        // (success or a mapped domain error). Real success is exercised by the
+        // committed fixtures.
         match e.extract_text(&Source::Bytes(text_pdf_bytes())) {
             Ok(r) => assert_eq!(r.kind, DocumentKind::Pdf),
             Err(err) => assert!(
@@ -175,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn classifies_non_pdf_as_unsupported() {
+    fn classifies_garbage_as_unknown_unsupported() {
         let e = AnyDocExtractor::new();
         let err = e.classify(&Source::Bytes(b"garbage".to_vec())).unwrap_err();
         assert!(matches!(err, ExtractionError::Unsupported(_)));
