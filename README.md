@@ -114,6 +114,13 @@ Because the transport is **stdio**, add the binary as a stdio MCP server in your
 
 All tools accept a file **path**; the generic `classify_document`/`extract_document` also accept optional base64 `bytes`. See [`SPEC.md`](./SPEC.md) §8.2 for details.
 
+### Using documents with MCP clients (e.g. opencode)
+
+Text-only models cannot read PDF/binary attachments — opencode attaches the file on drag-and-drop / `[PDF]` reference, and the model rejects it (`this model does not support pdf input`). This is a **client-side** limitation (opencode issues #17205 / #42544; the fix is expected after v1.18.18). The reliable pattern is:
+
+- Give the model the **file path** and have it call `documents_extract_document` (or `documents_extract_pdf`), rather than attaching the file.
+- The generic tools also accept base64 `bytes` if the client hands the content to the model.
+
 ---
 
 ## Development workflow
@@ -128,9 +135,10 @@ cargo clippy --all-targets -- -D warnings
 # test
 cargo test
 
-# coverage (≥ 85% line target)
+# coverage (≥ 85% line target on both default and `ocr-native` builds)
 cargo install cargo-llvm-cov        # once
 cargo llvm-cov --html
+cargo llvm-cov --features ocr-native --html
 ```
 
 See [`AGENTS.md`](./AGENTS.md) for the layer/dependency rules and conventions AI agents must follow in this repo.
