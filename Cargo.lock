@@ -1793,7 +1793,7 @@ name = "mcp-documents"
 version = "0.1.0"
 dependencies = [
  "anydoc",
- "base64 0.22.1",
+ "base64 0.23.1",
  "calamine",
  "csv",
  "pdf-inspector",
