@@ -2066,9 +2066,9 @@ dependencies = [
 
 [[package]]
 name = "pdf-interpret"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b32ec1d972495d0efb9373ae8bb5816af624cbb6cecc7ec119b7e0aed5fd9d2"
+checksum = "ceedfaec44dcacc387456cd5f7999c516f8b502af208e98449ac1da5547f5f90"
 dependencies = [
  "bitflags 2.13.1",
  "kurbo",
@@ -2087,9 +2087,9 @@ dependencies = [
 
 [[package]]
 name = "pdf-render"
-version = "1.0.0-beta.17"
+version = "1.0.0-beta.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc679b8d231d459923bb0077d3ecfc38c966762227881b85b1a6c807bf759f62"
+checksum = "216ef4876a97ae1194615964db9a1d16452c5c31dcb0264ad3c5e94cb87b2896"
 dependencies = [
  "bytemuck",
  "fast_image_resize",
