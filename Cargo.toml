@@ -33,7 +33,7 @@ anydoc = "0.1.8"
 pdf-render = "1.0.0-beta.17"
 # Per-page PDF text extraction + per-page classification (real TextBased/
 # Scanned/ImageBased/Mixed + page ranges). Used directly for the PDF path.
-pdf-inspector = "0.1.8"
+pdf-inspector = "1.17.0"
 # Streaming CSV parsing (memory < file size) for the dedicated CSV adapter.
 csv = "1.4"
 # Reading .xls/.xlsx workbooks (sheet listing + sheet/row extraction).
