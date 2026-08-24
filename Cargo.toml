@@ -51,6 +51,9 @@ schemars = "1"
 # Base64-decode for the optional `bytes` tool input (clients that pass the
 # file content to the model as base64 instead of a path).
 base64 = "0.23"
+# Platform constants (O_NOFOLLOW) for TOCTOU-safe, symlink-rejecting opens in
+# the file reader. Infrastructure-only.
+libc = "0.2"
 
 # OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
 tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }

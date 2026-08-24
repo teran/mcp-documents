@@ -27,6 +27,9 @@ pub const DEFAULT_OCR_MAX_PAGES: usize = 300;
 /// Default maximum characters returned for a `word_range` chunk (safety net).
 pub const DEFAULT_MAX_RETURN_CHARS: usize = 50_000_000;
 
+/// Default maximum decompressed bytes for a single archive member (256 MiB).
+pub const DEFAULT_MAX_DECOMPRESSED_BYTES: usize = 256 * 1024 * 1024;
+
 /// Read `MAX_INPUT_BYTES` (bytes), defaulting to 250 MiB. Enforced **before**
 /// base64 decode and before/while reading a path file.
 pub fn max_input_bytes() -> usize {
@@ -58,14 +61,57 @@ pub fn max_return_chars() -> usize {
     env_usize("MAX_RETURN_CHARS", DEFAULT_MAX_RETURN_CHARS)
 }
 
-/// Read `ALLOW_ROOT_DIR`, defaulting to `/` (the whole filesystem) on Unix.
+/// Read `MAX_DECOMPRESSED_BYTES`, defaulting to 256 MiB — cap on the
+/// decompressed size of a single archive member (e.g. a PPTX slide XML part)
+/// read by adapters that parse zip containers directly. Guards against
+/// decompression bombs where a tiny compressed member expands to an enormous
+/// amount of text.
+pub fn max_decompressed_bytes() -> usize {
+    env_usize("MAX_DECOMPRESSED_BYTES", DEFAULT_MAX_DECOMPRESSED_BYTES)
+}
+
+/// The user's home directory, from `$HOME` (Unix) or `USERPROFILE` (Windows).
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
+/// Expand a leading `~` (or `~/`) to the user's home directory.
 ///
-/// Every path passed to a tool is canonicalized and must be within this root.
-/// On Windows the analogous notion is the system volume root (`%system disk%:\`),
-/// which is the natural `ALLOW_ROOT_DIR` default there.
+/// `~` alone → home; `~/Documents/foo` → `<home>/Documents/foo`; any other
+/// value (including absolute and relative paths) is returned unchanged. Falls
+/// back to the literal input when the home directory is unavailable.
+pub fn expand_tilde(input: &str) -> PathBuf {
+    let trimmed = input.trim();
+    if trimmed == "~" {
+        return home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    }
+    if let Some(rest) = trimmed.strip_prefix("~/") {
+        let mut base = home_dir().unwrap_or_else(|| PathBuf::from("~"));
+        base.push(rest);
+        return base;
+    }
+    PathBuf::from(trimmed)
+}
+
+/// Read `ALLOW_ROOT_DIR`, defaulting to `~/Documents` on Unix (falling back to
+/// `/` when the home directory is unavailable, e.g. in minimal containers).
+///
+/// Every path passed to a tool is canonicalized and must be within this root,
+/// so a narrower default keeps the sandbox useful out of the box while still
+/// allowing access to the user's document folder. Operators that want more
+/// (or different) access must set `ALLOW_ROOT_DIR` explicitly (production
+/// deployments — especially containers — should always set it).
+/// On Windows the analogous default is the system volume root (`%system disk%:\`).
 pub fn allowroot() -> PathBuf {
     match std::env::var("ALLOW_ROOT_DIR") {
-        Ok(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+        Ok(v) if !v.trim().is_empty() => expand_tilde(&v),
         _ => {
             #[cfg(windows)]
             {
@@ -77,7 +123,10 @@ pub fn allowroot() -> PathBuf {
             }
             #[cfg(not(windows))]
             {
-                PathBuf::from("/")
+                match home_dir() {
+                    Some(home) => home.join("Documents"),
+                    None => PathBuf::from("/"),
+                }
             }
         }
     }
@@ -119,6 +168,7 @@ mod tests {
         assert_eq!(max_input_bytes(), DEFAULT_MAX_INPUT_BYTES);
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         assert_eq!(max_return_chars(), DEFAULT_MAX_RETURN_CHARS);
+        assert_eq!(max_decompressed_bytes(), DEFAULT_MAX_DECOMPRESSED_BYTES);
         assert_eq!(
             ocr_concurrency(),
             std::thread::available_parallelism()
@@ -126,7 +176,35 @@ mod tests {
                 .unwrap_or(1)
         );
         #[cfg(not(windows))]
-        assert_eq!(allowroot(), PathBuf::from("/"));
+        {
+            let expected = home_dir()
+                .map(|h| h.join("Documents"))
+                .unwrap_or_else(|| PathBuf::from("/"));
+            assert_eq!(allowroot(), expected);
+        }
+    }
+
+    #[test]
+    fn parses_decompressed_bytes() {
+        let _g = lock();
+        set_var("MAX_DECOMPRESSED_BYTES", "1024");
+        assert_eq!(max_decompressed_bytes(), 1024);
+        remove_var("MAX_DECOMPRESSED_BYTES");
+    }
+
+    #[test]
+    fn expand_tilde_handles_home_and_other() {
+        let _g = lock();
+        // Bare `~` expands to the home dir.
+        if let Some(home) = home_dir() {
+            assert_eq!(expand_tilde("~"), home);
+            assert_eq!(expand_tilde("~/Documents"), home.join("Documents"));
+        }
+        // Non-tilde inputs are returned unchanged.
+        assert_eq!(expand_tilde("/abs/path"), PathBuf::from("/abs/path"));
+        assert_eq!(expand_tilde("rel/path"), PathBuf::from("rel/path"));
+        // `~user` is intentionally NOT expanded (only `~` and `~/`).
+        assert_eq!(expand_tilde("~other/x"), PathBuf::from("~other/x"));
     }
 
     #[test]

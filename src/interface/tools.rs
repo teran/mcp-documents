@@ -3,8 +3,6 @@
 //! Also centralizes source construction + validation (input-size limit and
 //! `ALLOW_ROOT_DIR`), so every tool enforces the same constraints.
 
-use std::path::PathBuf;
-
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::config::max_input_bytes;
@@ -155,7 +153,7 @@ pub fn source_from_params(path: &str, bytes: Option<&str>) -> Result<Source, Ext
                 .map_err(|e| ExtractionError::Malformed(format!("invalid base64 bytes: {e}")))?;
             Source::Bytes(data)
         }
-        None => Source::Path(PathBuf::from(path)),
+        None => Source::Path(crate::config::expand_tilde(path)),
     };
     // Validate the input size and (for paths) ALLOW_ROOT_DIR; canonicalize paths.
     validate_source(&source)
