@@ -1,10 +1,12 @@
 # CI for mcp-documents.
 #
-# Runs on push/PR to the default branch (`master`) and on manual dispatch.
+# Runs on every push/PR to the default branch (`master`) and on manual dispatch:
+# formatters + linters + tests + coverage on both the default and `ocr-native`
+# builds, dependency audits, and a Docker image build (WITHOUT pushing — the
+# image is pushed only on release tags, see release.yml).
 #
 # The project's MSRV is `1.88` (see Cargo.toml `rust-version`, edition 2024), so
-# the `test` job runs a matrix of MSRV + latest stable. The remaining jobs run
-# on latest stable.
+# the `test` job runs a matrix of MSRV + latest stable.
 #
 # Commands mirror AGENTS.md / Makefile:
 #   fmt        -> cargo fmt --check
@@ -65,7 +67,9 @@ jobs:
         toolchain: [1.88, stable]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
         run: cargo test
@@ -146,3 +150,23 @@ jobs:
         uses: taiki-e/install-action@cargo-deny
       - name: cargo deny check
         run: cargo deny check
+
+  docker-build:
+    # Build the self-contained OCR image on every commit (PR + master) WITHOUT
+    # pushing. Push happens only on release tags (release.yml). BuildKit cache
+    # (gha) keeps repeat builds fast.
+    name: docker build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: ghcr.io/teran/mcp-documents:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
