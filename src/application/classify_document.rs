@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::domain::document::Classification;
 use crate::domain::error::ExtractionError;
 use crate::domain::ports::DocumentExtractor;
-use crate::domain::result::Source;
+use crate::domain::result::{ExtractionResult, Source};
 
 /// Classifies a document by delegating to the injected [`DocumentExtractor`].
 #[derive(Clone)]
@@ -22,6 +22,12 @@ impl ClassifyDocumentUseCase {
     /// Classify a document from its source.
     pub fn classify(&self, source: &Source) -> Result<Classification, ExtractionError> {
         self.extractor.classify(source)
+    }
+
+    /// Whole-document Markdown extraction (the `anydoc` fallback path), used by
+    /// the CLI for kinds without a dedicated format use case (e.g. ODF, EPUB).
+    pub fn extract_text(&self, source: &Source) -> Result<ExtractionResult, ExtractionError> {
+        self.extractor.extract_text(source)
     }
 }
 

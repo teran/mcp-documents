@@ -16,16 +16,54 @@ use crate::domain::result::PageBitmap;
 
 use super::error_map::map_load_pdf_error;
 
+/// Maximum total pixels allowed for a rendered page bitmap (guards against a
+/// giant pixmap allocation from a pathological page / DPI).
+pub const MAX_RENDER_PIXELS: u64 = 100_000_000;
+/// Maximum allowed side (width or height) in pixels.
+pub const MAX_RENDER_SIDE: u64 = 15_000;
+
 /// Convert a premultiplied RGBA8 pixel buffer to single-channel grayscale
 /// (luma), one byte per pixel.
 pub fn rgba8_to_luma(rgba: &[u8]) -> Vec<u8> {
-    rgba.chunks_exact(4)
-        .map(|p| {
-            let [r, g, b, _a] = [p[0], p[1], p[2], p[3]];
-            // Rec. 601 luma.
-            (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32).round() as u8
-        })
-        .collect()
+    let mut out = Vec::with_capacity(rgba.len() / 4);
+    let mut i = 0;
+    while i + 4 <= rgba.len() {
+        let r = rgba[i];
+        let g = rgba[i + 1];
+        let b = rgba[i + 2];
+        // Alpha is ignored; Rec. 601 luma.
+        out.push((0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32).round() as u8);
+        i += 4;
+    }
+    out
+}
+
+/// Estimate the rendered page's pixel dimensions from its crop box and the
+/// scale, returning `(width_px, height_px)`.
+fn estimate_dimensions(page: &pdf_render::pdf_syntax::page::Page<'_>, scale: f32) -> (u64, u64) {
+    let b = page.intersected_crop_box();
+    let w = (((b.x1 - b.x0) as f32) * scale).ceil() as u64;
+    let h = (((b.y1 - b.y0) as f32) * scale).ceil() as u64;
+    (w.max(1), h.max(1))
+}
+
+/// Enforce the render pixel cap: returns `ResourceLimit` when the page would
+/// allocate a giant pixmap.
+pub fn check_render_cap(
+    width_px: u64,
+    height_px: u64,
+    page_index: usize,
+) -> Result<(), ExtractionError> {
+    if width_px > MAX_RENDER_SIDE
+        || height_px > MAX_RENDER_SIDE
+        || width_px * height_px > MAX_RENDER_PIXELS
+    {
+        return Err(ExtractionError::ResourceLimit(format!(
+            "page {page_index} renders at {width_px}x{height_px} px, exceeding the render cap \
+             (max side {MAX_RENDER_SIDE} px, max {MAX_RENDER_PIXELS} px)"
+        )));
+    }
+    Ok(())
 }
 
 /// Pure-Rust PDF page → image renderer.
@@ -59,6 +97,10 @@ impl PdfPageRenderer for PdfRenderer {
                 .pages()
                 .get(page_index)
                 .ok_or_else(|| ExtractionError::Io(format!("page {page_index} out of range")))?;
+            // Guard against a giant pixmap allocation BEFORE rendering.
+            let (w_px, h_px) = estimate_dimensions(page, scale);
+            check_render_cap(w_px, h_px, page_index)?;
+
             let pixmap = pdf_render::render(
                 page,
                 &InterpreterSettings::default(),
@@ -131,5 +173,22 @@ mod tests {
         let rgba = [100, 100, 100, 255];
         let luma = rgba8_to_luma(&rgba);
         assert_eq!(luma, vec![100]);
+    }
+
+    #[test]
+    fn check_render_cap_accepts_normal() {
+        assert!(check_render_cap(3000, 4000, 0).is_ok());
+    }
+
+    #[test]
+    fn check_render_cap_rejects_giant_side_and_pixels() {
+        assert!(matches!(
+            check_render_cap(20_000, 100, 0),
+            Err(ExtractionError::ResourceLimit(_))
+        ));
+        assert!(matches!(
+            check_render_cap(20_000, 20_000, 0),
+            Err(ExtractionError::ResourceLimit(_))
+        ));
     }
 }

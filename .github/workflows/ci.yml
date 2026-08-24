@@ -1,0 +1,148 @@
+# CI for mcp-documents.
+#
+# Runs on push/PR to the default branch (`master`) and on manual dispatch.
+#
+# The project's MSRV is `1.88` (see Cargo.toml `rust-version`, edition 2024), so
+# the `test` job runs a matrix of MSRV + latest stable. The remaining jobs run
+# on latest stable.
+#
+# Commands mirror AGENTS.md / Makefile:
+#   fmt        -> cargo fmt --check
+#   clippy     -> cargo clippy --all-targets -- -D warnings
+#   test       -> cargo test (+ cargo build --release)
+#   coverage   -> cargo llvm-cov --fail-under-lines 85        (default build)
+#   ocr-native -> build + test + llvm-cov with --features ocr-native
+#   audit      -> cargo audit
+#   deny       -> cargo deny check
+#
+# The >=85% line-coverage gate is enforced on BOTH the default and `ocr-native`
+# builds (coverage and ocr-native jobs).
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # MSRV (rust-version 1.88) + latest stable.
+        toolchain: [1.88, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test
+      - name: cargo build --release
+        run: cargo build --release
+
+  coverage:
+    name: coverage (default build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: cargo llvm-cov --fail-under-lines 85
+        run: cargo llvm-cov --fail-under-lines 85
+
+  ocr-native:
+    # The full OCR build. Compiles vendored Tesseract + Leptonica (needs a C++
+    # toolchain + CMake) and embeds eng+rus tessdata. The crate only
+    # auto-downloads eng/tur, so `rus.traineddata` must be pre-provisioned into
+    # the tesseract-rs tessdata cache dir before building (same approach and
+    # jsdelivr mirror as the Dockerfile). The >=85% coverage gate also runs on
+    # this build.
+    name: build + test + coverage (ocr-native)
+    runs-on: ubuntu-latest
+    env:
+      TESSERACT_EMBED_LANGUAGES: eng,rus
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build tools (C++ + CMake) and provisioning helpers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake curl
+      - name: Provision rus.traineddata for tesseract-rs
+        # tesseract-rs cache dir on Linux is ~/.tesseract-rs/tessdata. Only `rus`
+        # needs manual provisioning (`eng` is auto-downloaded by the crate).
+        run: |
+          mkdir -p "$HOME/.tesseract-rs/tessdata"
+          curl -fL -o "$HOME/.tesseract-rs/tessdata/rus.traineddata" \
+            "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata"
+      - name: cargo build --release --features ocr-native
+        run: cargo build --release --features ocr-native
+      - name: cargo test --features ocr-native
+        run: cargo test --features ocr-native
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: cargo llvm-cov --features ocr-native --fail-under-lines 85
+        run: cargo llvm-cov --features ocr-native --fail-under-lines 85
+
+  audit:
+    name: audit (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: cargo audit
+        run: cargo audit
+
+  deny:
+    name: deny (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: cargo deny check
+        run: cargo deny check

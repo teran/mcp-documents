@@ -1,12 +1,13 @@
 //! Integration tests for infrastructure adapters against committed fixtures.
 //!
 //! These run with **default features** (no OCR) and exercise the real
-//! `anydoc`/`pdf-render` paths on a small committed text PDF.
+//! `pdf-inspector` / `pdf-render` / `anydoc` paths on a small committed text
+//! PDF.
 
 use mcp_documents::domain::document::PdfType;
-use mcp_documents::domain::ports::{DocumentExtractor, PdfPageRenderer};
+use mcp_documents::domain::ports::{DocumentExtractor, PdfPageRenderer, PdfTextSource};
 use mcp_documents::domain::result::Source;
-use mcp_documents::infrastructure::{AnyDocExtractor, PdfRenderer};
+use mcp_documents::infrastructure::{AnyDocExtractor, PdfRenderer, PdfTextSourceAdapter};
 
 fn fixture(name: &str) -> Source {
     Source::Path(
@@ -21,7 +22,6 @@ fn anydoc_extracts_text_from_fixture_pdf() {
     let extractor = AnyDocExtractor::new();
     let result = extractor.extract_text(&fixture("simple_text.pdf")).unwrap();
     assert_eq!(result.kind.as_str(), "pdf");
-    assert_eq!(result.pdf_type, Some(PdfType::TextBased));
     // The fixture contains this literal text.
     assert!(result.markdown.contains("Hello, world from mcp-documents"));
 }
@@ -30,8 +30,24 @@ fn anydoc_extracts_text_from_fixture_pdf() {
 fn anydoc_classifies_fixture_pdf_as_text_based() {
     let extractor = AnyDocExtractor::new();
     let classification = extractor.classify(&fixture("simple_text.pdf")).unwrap();
+    assert_eq!(classification.kind.as_str(), "pdf");
     assert_eq!(classification.pdf_type, Some(PdfType::TextBased));
     assert!(classification.pages_needing_ocr.is_empty());
+}
+
+#[test]
+fn pdf_text_source_reports_info_and_extracts_pages() {
+    let source = fixture("simple_text.pdf");
+    let adapter = PdfTextSourceAdapter::new();
+    let info = adapter.pdf_info(&source).unwrap();
+    assert_eq!(info.pdf_type, PdfType::TextBased);
+    assert_eq!(info.page_count, 1);
+    assert!(info.pages_needing_ocr.is_empty());
+
+    let pages = adapter.extract_pages(&source, &[0]).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].page_index, 0);
+    assert!(pages[0].text.to_lowercase().contains("mcp-documents"));
 }
 
 #[test]

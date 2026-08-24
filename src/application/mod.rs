@@ -4,7 +4,15 @@
 //! `pdf-render` or `tesseract-rs`.
 
 pub mod classify_document;
-pub mod extract_document;
+pub mod csv;
+pub mod pdf;
+pub mod presentation;
+pub mod spreadsheet;
+pub mod text_doc;
 
 pub use classify_document::ClassifyDocumentUseCase;
-pub use extract_document::ExtractDocumentUseCase;
+pub use csv::CsvUseCase;
+pub use pdf::{OCR_DPI, PdfUseCase};
+pub use presentation::PresentationUseCase;
+pub use spreadsheet::SpreadsheetUseCase;
+pub use text_doc::TextDocUseCase;

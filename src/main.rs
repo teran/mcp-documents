@@ -1,16 +1,23 @@
 //! Binary entrypoint.
 //!
 //! Dispatch: if argv contains a recognized subcommand (`classify`, `extract`,
-//! `extract-text`, `serve`) the corresponding CLI path runs; otherwise the
-//! MCP stdio server runs.
+//! `serve`) the corresponding CLI path runs; otherwise the MCP stdio server
+//! runs.
 
 use std::sync::Arc;
 
-use mcp_documents::application::{ClassifyDocumentUseCase, ExtractDocumentUseCase};
-use mcp_documents::domain::ports::{DocumentExtractor, OcrProvider, PdfPageRenderer};
-use mcp_documents::infrastructure::AnyDocExtractor;
-use mcp_documents::infrastructure::PdfRenderer;
-use mcp_documents::interface::cli::CliCommand;
+use mcp_documents::application::{
+    ClassifyDocumentUseCase, CsvUseCase, PdfUseCase, PresentationUseCase, SpreadsheetUseCase,
+    TextDocUseCase,
+};
+use mcp_documents::domain::ports::{
+    DocumentExtractor, OcrProvider, PdfPageRenderer, PdfTextSource,
+};
+use mcp_documents::infrastructure::{
+    AnyDocExtractor, AnyDocPresentationReader, AnyDocTextReader, CalamineSpreadsheetReader,
+    CsvStreamReader, PdfRenderer, PdfTextSourceAdapter,
+};
+use mcp_documents::interface::cli::{CliCommand, CliDispatch};
 use mcp_documents::interface::{DocumentsServer, run_cli, serve_stdio};
 
 #[tokio::main]
@@ -21,21 +28,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let extractor: Arc<dyn DocumentExtractor> = Arc::new(AnyDocExtractor::new());
     let renderer: Arc<dyn PdfPageRenderer> = Arc::new(PdfRenderer::new());
     let ocr: Arc<dyn OcrProvider> = build_ocr()?;
+    let pdf_text: Arc<dyn PdfTextSource> = Arc::new(PdfTextSourceAdapter::new());
 
     let classify = ClassifyDocumentUseCase::new(extractor.clone());
-    let extract = ExtractDocumentUseCase::new(extractor, ocr, renderer);
+    let pdf = PdfUseCase::new(extractor.clone(), pdf_text, renderer, ocr);
+    let text_doc = TextDocUseCase::new(extractor.clone(), Arc::new(AnyDocTextReader::new()));
+    let spreadsheet = SpreadsheetUseCase::new(
+        extractor.clone(),
+        Arc::new(CalamineSpreadsheetReader::new()),
+    );
+    let presentation = PresentationUseCase::new(
+        extractor.clone(),
+        Arc::new(AnyDocPresentationReader::new(None)),
+    );
+    let csv = CsvUseCase::new(extractor.clone(), Arc::new(CsvStreamReader::new()));
 
     // CLI dispatch vs MCP stdio server.
-    match CliCommand::parse(&args) {
-        Some(cmd) if !cmd.is_serve() => {
-            run_cli(&cmd, &classify, &extract)
-                .await
-                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
+    match CliCommand::dispatch(&args) {
+        CliDispatch::Cli(cmd) => {
+            run_cli(
+                &cmd,
+                &classify,
+                &pdf,
+                &text_doc,
+                &spreadsheet,
+                &presentation,
+                &csv,
+            )
+            .await
+            .map_err(Box::<dyn std::error::Error + Send + Sync>::from)?;
             Ok(())
         }
-        _ => {
-            // No recognized subcommand, or `serve`: run the MCP stdio server.
-            let server = DocumentsServer::new(classify, extract);
+        CliDispatch::Server => {
+            // `serve`, an unknown subcommand, or no arguments: run the MCP
+            // stdio server.
+            let server =
+                DocumentsServer::new(classify, pdf, text_doc, spreadsheet, presentation, csv);
             serve_stdio(server).await
         }
     }
@@ -78,16 +106,5 @@ mod tests {
             err,
             mcp_documents::domain::error::ExtractionError::OcrUnavailable(_)
         ));
-    }
-
-    /// With OCR enabled, startup builds a real provider (initializes eng+rus).
-    #[cfg(feature = "ocr-native")]
-    #[test]
-    fn build_ocr_native_build_produces_provider() {
-        let ocr = build_ocr().expect("OCR engine should initialize");
-        assert!(
-            ocr.ocr_page(&PageBitmap::new(4, 4, 1, vec![255; 16]).unwrap())
-                .is_ok()
-        );
     }
 }

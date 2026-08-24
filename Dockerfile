@@ -46,19 +46,51 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && mkdir -p /app/bin \
     && cp /app/target/release/mcp-documents /app/bin/mcp-documents
 
+# Prepare an empty runtime tessdata cache dir for the distroless stage.
+# Distroless images have NO shell, so `RUN` cannot create dirs there — we
+# create the cache dir here (builder) and COPY it into the runtime stage below.
+# NOTE: Docker COPY does not preserve a source directory's own ownership, so we
+# must use `COPY --chown=65534:65534` on the runtime side to make `/cache`
+# owned by `nobody` (owner rwx) for the embedded-tessdata materialization.
+RUN mkdir -p /app/rootfs/cache
+
 ########## Runtime ##########
-# Must match the builder's libc/libstdc++ ABI: the binary is dynamically linked
-# against glibc + libstdc++ (Tesseract/Leptonica are statically linked, but
-# glibc/libstdc++ are dynamic), so the runtime base must be the SAME Debian
-# release as the builder (trixie), not bookworm (whose glibc 2.36 / older
-# libstdc++ cannot run a trixie-built binary). No runtime packages are
-# installed beyond the base image; the image ships only the single binary.
-FROM debian:trixie-slim AS runtime
+# ABI decision: the binary is dynamically linked against glibc + libstdc++
+# (Tesseract/Leptonica are statically linked, but glibc/libstdc++ are dynamic).
+# Built on Debian trixie, it requires GLIBC_2.38 / GLIBCXX_3.4.31. We therefore
+# use `gcr.io/distroless/cc-debian13` — Debian 13 (trixie), glibc 2.41 — which
+# MATCHES the builder's ABI and ships glibc + libstdc++ + libgcc.
+# DO NOT switch to `cc-debian12` (bookworm, glibc 2.36): it cannot load a
+# trixie-built binary. The `cc` variant (not `base`/`static`) is required
+# because it bundles libstdc++ alongside glibc.
+FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
 
 # The binary is self-contained with respect to OCR: embedded eng+rus tessdata,
 # pure-Rust renderer, static OCR libs. Only the base glibc/libstdc++ are needed.
 WORKDIR /app
 COPY --from=builder /app/bin/mcp-documents /usr/local/bin/mcp-documents
 
+# Non-root hardening: run as `nobody` (UID 65534). Because distroless has no
+# shell, the writable tessdata cache dir is prepared in the builder and copied
+# in here with `--chown=65534:65534` (Docker does not preserve a source dir's
+# ownership, so this flag is required). We point XDG_CACHE_HOME at it so the
+# provider's primary cache path resolves to /cache/mcp-documents/tessdata.
+# (The provider falls back to $HOME/.cache and then /tmp; /tmp is already
+# present in this image and world-writable (1777), so it also works for nobody.)
+COPY --from=builder --chown=65534:65534 /app/rootfs/cache /cache
+ENV XDG_CACHE_HOME=/cache
+
+# The `:nonroot` base tag defaults to UID 65532; we explicitly target nobody
+# 65534 to match the writable /cache above. Using the numeric UID is
+# unambiguous (no getpwnam needed; /etc/passwd also defines nobody:65534).
+USER 65534
+
 # Entrypoint: runs as an MCP stdio server by default; also usable as a CLI.
+# Distroless has no shell, so ENTRYPOINT/CMD must stay in exec (vector) form.
 ENTRYPOINT ["/usr/local/bin/mcp-documents"]
+
+# Read-only rootfs guidance: distroless already ships no shell/package manager.
+# The only writable paths are /cache (tessdata) and /tmp, both regenerable. For
+# a fully read-only rootfs run with `--read-only --tmpfs /tmp` (or mount a
+# volume / emptyDir on /cache); the tessdata cache is re-materialized from the
+# embedded bytes on each container start, so it need not persist.

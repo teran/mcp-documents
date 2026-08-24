@@ -69,6 +69,18 @@ pub enum PdfType {
     Mixed,
 }
 
+impl PdfType {
+    /// Machine-readable name for the type.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PdfType::TextBased => "TextBased",
+            PdfType::Scanned => "Scanned",
+            PdfType::ImageBased => "ImageBased",
+            PdfType::Mixed => "Mixed",
+        }
+    }
+}
+
 /// Per-page classification result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageClassification {

@@ -1,0 +1,64 @@
+# cargo-deny configuration — run with `cargo deny check`.
+# See https://embarkstudios.github.io/cargo-deny/
+#
+# The CI `deny` job runs `cargo deny check` (bans + licenses + advisories +
+# sources) on every push/PR.
+
+[graph]
+# Check all features (including `ocr-native`) so the tesseract-rs dependency
+# subtree is licensed too.
+all-features = true
+
+[licenses]
+# Reject any copyleft license (GPL / AGPL / LGPL / MPL) by default. See the
+# `r-efi` exception below for the one crate that offers a copyleft option.
+copyleft = "deny"
+
+# A crate with an unrecognizable license is a warning (not a hard failure) so
+# that odd-but-permissive expressions (e.g. `MIT/Apache-2.0` or `Unlicense/MIT`)
+# don't block the gate. The allow-list below still hard-fails on genuinely
+# disallowed licenses.
+unlicensed = "warn"
+
+# Only auto-accept a license guessed from a LICENSE file when we are confident.
+confidence-threshold = 0.8
+
+# The allow-list is the set of permissive licenses actually used in this tree
+# (see `cargo metadata` / the resolved graph).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unlicense",
+  "CC0-1.0",
+  "NCSA",
+  "Unicode-3.0",
+]
+
+# `r-efi` is triple-licensed `MIT OR Apache-2.0 OR LGPL-2.1-or-later`. We use
+# the permissive MIT/Apache-2.0 option (it enters the tree only via the
+# dev/test graph). This exception documents that the LGPL option is deliberately
+# not exercised; without it the copyleft = "deny" policy above would flag it.
+[[licenses.exceptions]]
+name = "r-efi"
+version = "*"
+license = "MIT"
+
+# Tesseract and Leptonica are VENDORED and compiled from source at build time —
+# they are NOT Cargo dependencies, so cargo-deny does not scan them. They are
+# Apache-2.0 (Tesseract) and BSD-2-Clause (Leptonica), both permissive and
+# already covered by the allow-list above, so no further handling is needed.
+
+[bans]
+# Multiple versions of the same crate are common and mostly harmless here; warn
+# rather than fail so the gate only breaks on real problems.
+multiple-versions = "warn"
+wildcards = "allow"
+
+[advisories]
+# Advisories are also checked by `cargo audit`; keep the OSV/DB fresh.
+yanked = "deny"

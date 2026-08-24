@@ -42,6 +42,50 @@ pub fn map_load_pdf_error(e: pdf_render::pdf_syntax::LoadPdfError) -> Extraction
     }
 }
 
+/// Map a `pdf_inspector::PdfError` onto a domain error.
+pub fn map_pdf_inspector_error(e: pdf_inspector::PdfError) -> ExtractionError {
+    use pdf_inspector::PdfError;
+    match e {
+        PdfError::Encrypted => ExtractionError::Encrypted,
+        PdfError::InvalidStructure => {
+            ExtractionError::Malformed("PDF has invalid structure".into())
+        }
+        PdfError::Parse(msg) => ExtractionError::Malformed(format!("PDF parse error: {msg}")),
+        PdfError::NotAPdf(_) => ExtractionError::Unsupported(DocumentKind::Pdf),
+        PdfError::Io(e) => ExtractionError::Io(e.to_string()),
+    }
+}
+
+/// Map a `calamine::Error` onto a domain error.
+pub fn map_calamine_error(e: calamine::Error) -> ExtractionError {
+    match e {
+        calamine::Error::Msg(msg) => ExtractionError::Malformed(format!("spreadsheet: {msg}")),
+        calamine::Error::Io(e) => ExtractionError::Io(e.to_string()),
+        // `calamine::Error` is non-exhaustive; fall back to Malformed.
+        _ => ExtractionError::Malformed("could not read spreadsheet".into()),
+    }
+}
+
+/// Map an I/O error from the streaming CSV reader onto a domain error.
+pub fn map_csv_io_error(e: std::io::Error) -> ExtractionError {
+    ExtractionError::Io(e.to_string())
+}
+
+/// Map a `zip::result::ZipError` (reading PPTX slide parts) onto a domain error.
+pub fn map_zip_error(e: zip::result::ZipError) -> ExtractionError {
+    use zip::result::ZipError;
+    match e {
+        ZipError::FileNotFound => {
+            ExtractionError::MissingPart("presentation part not found in archive".into())
+        }
+        ZipError::InvalidArchive(_) => ExtractionError::Malformed("invalid OOXML archive".into()),
+        ZipError::UnsupportedArchive(_) => {
+            ExtractionError::Malformed("unsupported OOXML archive".into())
+        }
+        _ => ExtractionError::Malformed("could not read OOXML archive".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +153,57 @@ mod tests {
             map_load_pdf_error(LoadPdfError::TooLarge(5, 6)),
             ExtractionError::ResourceLimit("PDF too large: 5 objects, 6 pages".into())
         );
+    }
+
+    #[test]
+    fn maps_pdf_inspector_error_variants() {
+        assert_eq!(
+            map_pdf_inspector_error(pdf_inspector::PdfError::Encrypted),
+            ExtractionError::Encrypted
+        );
+        assert!(matches!(
+            map_pdf_inspector_error(pdf_inspector::PdfError::Parse("x".into())),
+            ExtractionError::Malformed(_)
+        ));
+        assert!(matches!(
+            map_pdf_inspector_error(pdf_inspector::PdfError::InvalidStructure),
+            ExtractionError::Malformed(_)
+        ));
+        assert!(matches!(
+            map_pdf_inspector_error(pdf_inspector::PdfError::NotAPdf("x".into())),
+            ExtractionError::Unsupported(_)
+        ));
+        assert!(matches!(
+            map_pdf_inspector_error(pdf_inspector::PdfError::Io(std::io::Error::other("io"))),
+            ExtractionError::Io(_)
+        ));
+    }
+
+    #[test]
+    fn maps_calamine_error() {
+        assert!(matches!(
+            map_calamine_error(calamine::Error::Msg("bad")),
+            ExtractionError::Malformed(_)
+        ));
+        assert!(matches!(
+            map_calamine_error(calamine::Error::Io(std::io::Error::other("io"))),
+            ExtractionError::Io(_)
+        ));
+    }
+
+    #[test]
+    fn maps_csv_io_and_zip_errors() {
+        assert!(matches!(
+            map_csv_io_error(std::io::Error::other("io")),
+            ExtractionError::Io(_)
+        ));
+        assert!(matches!(
+            map_zip_error(zip::result::ZipError::FileNotFound),
+            ExtractionError::MissingPart(_)
+        ));
+        assert!(matches!(
+            map_zip_error(zip::result::ZipError::InvalidArchive("bad".into())),
+            ExtractionError::Malformed(_)
+        ));
     }
 }

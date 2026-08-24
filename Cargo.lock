@@ -1794,13 +1794,18 @@ version = "0.1.0"
 dependencies = [
  "anydoc",
  "base64 0.22.1",
+ "calamine",
+ "csv",
+ "pdf-inspector",
  "pdf-render",
+ "quick-xml",
  "rmcp",
  "schemars",
  "serde",
  "tesseract-rs",
  "tokio",
  "tokio-test",
+ "zip",
 ]
 
 [[package]]
