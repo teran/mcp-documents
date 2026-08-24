@@ -4,6 +4,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use crate::config::max_return_chars;
 use crate::domain::document::DocumentKind;
 use crate::domain::error::ExtractionError;
 use crate::domain::meta::PresentationInfo;
@@ -15,15 +16,31 @@ use crate::domain::result::{ExtractionResult, Source};
 pub struct PresentationUseCase {
     classifier: Arc<dyn DocumentExtractor>,
     reader: Arc<dyn PresentationReader>,
+    /// Safety-net cap on the size of the returned Markdown (`MAX_RETURN_CHARS`).
+    max_return_chars: usize,
 }
 
 impl PresentationUseCase {
-    /// Build the use case around its injected ports.
+    /// Build the use case around its injected ports, reading the char cap from
+    /// env (`MAX_RETURN_CHARS`).
     pub fn new(
         classifier: Arc<dyn DocumentExtractor>,
         reader: Arc<dyn PresentationReader>,
     ) -> Self {
-        Self { classifier, reader }
+        Self::new_with_max_chars(classifier, reader, max_return_chars())
+    }
+
+    /// Build with an explicit char cap (used by tests to avoid env races).
+    pub fn new_with_max_chars(
+        classifier: Arc<dyn DocumentExtractor>,
+        reader: Arc<dyn PresentationReader>,
+        max_return_chars: usize,
+    ) -> Self {
+        Self {
+            classifier,
+            reader,
+            max_return_chars,
+        }
     }
 
     /// Verify the source is exactly `expected` (`Ppt` or `Pptx`), returning a
@@ -51,7 +68,8 @@ impl PresentationUseCase {
     }
 
     /// Extract the requested 0-based `slide_range` as Markdown (ignored for
-    /// legacy `.ppt`, which returns the whole document).
+    /// legacy `.ppt`, which returns the whole document). Enforces
+    /// `MAX_RETURN_CHARS` on the returned Markdown.
     pub fn extract_markdown(
         &self,
         source: &Source,
@@ -60,6 +78,13 @@ impl PresentationUseCase {
     ) -> Result<ExtractionResult, ExtractionError> {
         let kind = self.require_kind(source, expected)?;
         let markdown = self.reader.extract_presentation(source, slide_range)?;
+        let char_count = markdown.chars().count();
+        if char_count > self.max_return_chars {
+            return Err(ExtractionError::ResourceLimit(format!(
+                "extracted {char_count} characters, exceeding MAX_RETURN_CHARS={}",
+                self.max_return_chars
+            )));
+        }
         Ok(ExtractionResult::markdown_only(kind, None, markdown))
     }
 }
@@ -145,5 +170,23 @@ mod tests {
             .unwrap();
         assert_eq!(out.markdown, "slide text");
         assert_eq!(out.kind, DocumentKind::Ppt);
+    }
+
+    #[test]
+    fn extract_markdown_char_cap_is_enforced() {
+        let u = PresentationUseCase::new_with_max_chars(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pptx,
+            }),
+            Arc::new(FakeReader {
+                slides: 3,
+                markdown: "a very long slide body".into(),
+            }),
+            5,
+        );
+        let err = u
+            .extract_markdown(&Source::Bytes(vec![1]), DocumentKind::Pptx, None)
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
 }

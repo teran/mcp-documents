@@ -103,11 +103,21 @@ impl AnyDocPresentationReader {
             let mut archive =
                 zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(map_zip_error)?;
             let mut parts: Vec<String> = Vec::new();
+            // Cap each decompressed slide part so a zip-bomb member cannot expand
+            // to an unbounded string (decompression-bomb guard).
+            let max = crate::config::max_decompressed_bytes();
             for &num in slide_nums {
                 let name = format!("{SLIDE_PREFIX}{num}{SLIDE_SUFFIX}");
-                let mut file = archive.by_name(&name).map_err(map_zip_error)?;
+                let file = archive.by_name(&name).map_err(map_zip_error)?;
+                let mut limited = file.take(max as u64 + 1);
                 let mut xml = String::new();
-                file.read_to_string(&mut xml).map_err(map_csv_io_error)?;
+                limited.read_to_string(&mut xml).map_err(map_csv_io_error)?;
+                if xml.len() as u64 > max as u64 {
+                    return Err(ExtractionError::ResourceLimit(format!(
+                        "slide {num} expands to {} bytes, exceeding MAX_DECOMPRESSED_BYTES={max}",
+                        xml.len()
+                    )));
+                }
                 parts.push(slide_xml_to_text(&xml)?);
             }
             Ok::<_, ExtractionError>(parts.join("\n\n"))
@@ -169,6 +179,24 @@ pub fn make_presentation_reader() -> Arc<dyn PresentationReader> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::sync::MutexGuard;
+
+    use crate::config::ENV_LOCK;
+
+    fn lock() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Build a minimal in-memory PPTX whose single slide carries `slide_xml`.
+    fn make_pptx(slide_xml: &str) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("ppt/slides/slide1.xml", opts).unwrap();
+        zip.write_all(slide_xml.as_bytes()).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
 
     #[test]
     fn slide_xml_to_text_extracts_runs() {
@@ -193,5 +221,32 @@ mod tests {
         let a = AnyDocPresentationReader::new(None);
         let b = make_presentation_reader();
         let _ = (a, b);
+    }
+
+    #[test]
+    fn pptx_extracts_slides_and_counts() {
+        let r = AnyDocPresentationReader::new(None);
+        let bytes = make_pptx(r#"<p:sld><a:t>Hi</a:t></p:sld>"#);
+        let info = r.presentation_info(&Source::Bytes(bytes.clone())).unwrap();
+        assert_eq!(info.slide_count, 1);
+        let md = r
+            .extract_presentation(&Source::Bytes(bytes), Some(0..1))
+            .unwrap();
+        assert!(md.contains("Hi"));
+    }
+
+    #[test]
+    fn pptx_decompression_cap_is_enforced() {
+        let _g = lock();
+        let r = AnyDocPresentationReader::new(None);
+        // A slide XML that decompresses beyond the (tiny) cap.
+        let big = format!("<p:sld><a:t>{}</a:t></p:sld>", "x".repeat(4096));
+        let bytes = make_pptx(&big);
+        unsafe { std::env::set_var("MAX_DECOMPRESSED_BYTES", "16") };
+        let err = r
+            .extract_presentation(&Source::Bytes(bytes), Some(0..1))
+            .unwrap_err();
+        unsafe { std::env::remove_var("MAX_DECOMPRESSED_BYTES") };
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
 }

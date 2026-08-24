@@ -4,6 +4,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use crate::config::max_return_chars;
 use crate::domain::document::DocumentKind;
 use crate::domain::error::ExtractionError;
 use crate::domain::meta::SpreadsheetInfo;
@@ -15,12 +16,28 @@ use crate::domain::result::{ExtractionResult, Source};
 pub struct SpreadsheetUseCase {
     classifier: Arc<dyn DocumentExtractor>,
     reader: Arc<dyn SpreadsheetReader>,
+    /// Safety-net cap on the size of the returned Markdown (`MAX_RETURN_CHARS`).
+    max_return_chars: usize,
 }
 
 impl SpreadsheetUseCase {
-    /// Build the use case around its injected ports.
+    /// Build the use case around its injected ports, reading the char cap from
+    /// env (`MAX_RETURN_CHARS`).
     pub fn new(classifier: Arc<dyn DocumentExtractor>, reader: Arc<dyn SpreadsheetReader>) -> Self {
-        Self { classifier, reader }
+        Self::new_with_max_chars(classifier, reader, max_return_chars())
+    }
+
+    /// Build with an explicit char cap (used by tests to avoid env races).
+    pub fn new_with_max_chars(
+        classifier: Arc<dyn DocumentExtractor>,
+        reader: Arc<dyn SpreadsheetReader>,
+        max_return_chars: usize,
+    ) -> Self {
+        Self {
+            classifier,
+            reader,
+            max_return_chars,
+        }
     }
 
     /// Verify the source is exactly `expected` (`Xls` or `Xlsx`), returning a
@@ -48,7 +65,8 @@ impl SpreadsheetUseCase {
     }
 
     /// Extract a sheet (by name, or the first when `None`) as a Markdown table,
-    /// restricted to the optional 0-based `row_range`.
+    /// restricted to the optional 0-based `row_range`. Enforces
+    /// `MAX_RETURN_CHARS` on the returned table.
     pub fn extract_markdown(
         &self,
         source: &Source,
@@ -58,6 +76,13 @@ impl SpreadsheetUseCase {
     ) -> Result<ExtractionResult, ExtractionError> {
         let kind = self.require_kind(source, expected)?;
         let markdown = self.reader.extract_sheet(source, sheet, row_range)?;
+        let char_count = markdown.chars().count();
+        if char_count > self.max_return_chars {
+            return Err(ExtractionError::ResourceLimit(format!(
+                "extracted {char_count} characters, exceeding MAX_RETURN_CHARS={}",
+                self.max_return_chars
+            )));
+        }
         Ok(ExtractionResult::markdown_only(kind, None, markdown))
     }
 }
@@ -155,5 +180,23 @@ mod tests {
             .unwrap();
         assert_eq!(out.markdown, "| a | b |");
         assert_eq!(out.kind, DocumentKind::Xls);
+    }
+
+    #[test]
+    fn extract_markdown_char_cap_is_enforced() {
+        let u = SpreadsheetUseCase::new_with_max_chars(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Xlsx,
+            }),
+            Arc::new(FakeReader {
+                info: SpreadsheetInfo { sheets: vec![] },
+                markdown: "a very long table body".into(),
+            }),
+            5,
+        );
+        let err = u
+            .extract_markdown(&Source::Bytes(vec![1]), DocumentKind::Xlsx, None, None)
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
 }

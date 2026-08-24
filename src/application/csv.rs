@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use crate::config::max_return_chars;
 use crate::domain::document::DocumentKind;
 use crate::domain::error::ExtractionError;
 use crate::domain::meta::CsvInfo;
@@ -14,12 +15,28 @@ use crate::domain::result::{ExtractionResult, Source};
 pub struct CsvUseCase {
     classifier: Arc<dyn DocumentExtractor>,
     reader: Arc<dyn CsvReader>,
+    /// Safety-net cap on the size of the returned Markdown (`MAX_RETURN_CHARS`).
+    max_return_chars: usize,
 }
 
 impl CsvUseCase {
-    /// Build the use case around its injected ports.
+    /// Build the use case around its injected ports, reading the char cap from
+    /// env (`MAX_RETURN_CHARS`).
     pub fn new(classifier: Arc<dyn DocumentExtractor>, reader: Arc<dyn CsvReader>) -> Self {
-        Self { classifier, reader }
+        Self::new_with_max_chars(classifier, reader, max_return_chars())
+    }
+
+    /// Build with an explicit char cap (used by tests to avoid env races).
+    pub fn new_with_max_chars(
+        classifier: Arc<dyn DocumentExtractor>,
+        reader: Arc<dyn CsvReader>,
+        max_return_chars: usize,
+    ) -> Self {
+        Self {
+            classifier,
+            reader,
+            max_return_chars,
+        }
     }
 
     /// Verify the source is actually a CSV, returning a clear tool-level error
@@ -40,6 +57,7 @@ impl CsvUseCase {
 
     /// Extract the requested 0-based `row_range` (default all rows) as a
     /// Markdown table. Skips to the start row and reads only the range.
+    /// Enforces `MAX_RETURN_CHARS` on the returned table.
     pub fn extract_markdown(
         &self,
         source: &Source,
@@ -47,6 +65,13 @@ impl CsvUseCase {
     ) -> Result<ExtractionResult, ExtractionError> {
         self.require_csv(source)?;
         let markdown = self.reader.extract_csv(source, row_range)?;
+        let char_count = markdown.chars().count();
+        if char_count > self.max_return_chars {
+            return Err(ExtractionError::ResourceLimit(format!(
+                "extracted {char_count} characters, exceeding MAX_RETURN_CHARS={}",
+                self.max_return_chars
+            )));
+        }
         Ok(ExtractionResult::markdown_only(
             DocumentKind::Csv,
             None,
@@ -138,5 +163,27 @@ mod tests {
             .unwrap();
         assert_eq!(out.markdown, "| a | b |");
         assert_eq!(out.kind, DocumentKind::Csv);
+    }
+
+    #[test]
+    fn extract_markdown_char_cap_is_enforced() {
+        let u = CsvUseCase::new_with_max_chars(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Csv,
+            }),
+            Arc::new(FakeReader {
+                info: CsvInfo {
+                    row_count: 1,
+                    column_count: 1,
+                    header: vec!["a".into()],
+                },
+                markdown: "a very long table body".into(),
+            }),
+            5,
+        );
+        let err = u
+            .extract_markdown(&Source::Bytes(vec![1]), None)
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
 }
