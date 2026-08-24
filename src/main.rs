@@ -13,6 +13,7 @@ use mcp_documents::application::{
 use mcp_documents::domain::ports::{
     DocumentExtractor, OcrProvider, PdfPageRenderer, PdfTextSource,
 };
+use mcp_documents::domain::result::Source;
 use mcp_documents::infrastructure::{
     AnyDocExtractor, AnyDocPresentationReader, AnyDocTextReader, CalamineSpreadsheetReader,
     CsvStreamReader, PdfRenderer, PdfTextSourceAdapter,
@@ -46,6 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // CLI dispatch vs MCP stdio server.
     match CliCommand::dispatch(&args) {
         CliDispatch::Cli(cmd) => {
+            // Enforce the same source gates as the MCP tools (ALLOW_ROOT_DIR +
+            // MAX_INPUT_BYTES, with tilde expansion) — the CLI otherwise builds
+            // `Source::Path` directly and would bypass them.
+            validate_cli_path(&cmd)?;
             run_cli(
                 &cmd,
                 &classify,
@@ -67,6 +72,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             serve_stdio(server).await
         }
     }
+}
+
+/// Enforce the shared source gates (`ALLOW_ROOT_DIR` + `MAX_INPUT_BYTES`, with
+/// `~` expansion) on a CLI path before it is read, mirroring the MCP tools.
+fn validate_cli_path(cmd: &CliCommand) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let path = match cmd {
+        CliCommand::Classify(p) | CliCommand::Extract(p) => p,
+        CliCommand::Serve => return Ok(()),
+    };
+    let expanded = mcp_documents::config::expand_tilde(&path.to_string_lossy());
+    mcp_documents::infrastructure::file_reader::validate_source(&Source::Path(expanded))
+        .map(|_| ())
+        .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()))
 }
 
 /// Select the OCR provider based on the enabled feature.

@@ -22,7 +22,14 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn run(args: &[&str]) -> std::process::Output {
-    Command::new(bin()).args(args).output().unwrap()
+    // Point ALLOW_ROOT_DIR at the repo root so the committed fixtures are
+    // inside the sandbox (the default root is ~/Documents, which the fixtures
+    // would fall outside of).
+    Command::new(bin())
+        .env("ALLOW_ROOT_DIR", env!("CARGO_MANIFEST_DIR"))
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 #[test]

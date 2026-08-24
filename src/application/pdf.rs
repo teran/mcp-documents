@@ -135,7 +135,10 @@ impl PdfUseCase {
 
         // Render + OCR scanned pages concurrently, bounded by OCR_CONCURRENCY.
         if !ocr_pages.is_empty() {
-            let pdf_bytes = source.read_bytes()?;
+            // Share the PDF bytes across tasks via Arc instead of cloning the
+            // whole buffer once per page (peak memory stays near file size, not
+            // pages × file size).
+            let pdf_bytes: Arc<[u8]> = Arc::from(source.read_bytes()?);
             let mut ocr_results = self.ocr_pages_concurrently(pdf_bytes, &ocr_pages).await?;
             pages.append(&mut ocr_results);
         }
@@ -161,10 +164,11 @@ impl PdfUseCase {
 
     /// Render + OCR the given pages concurrently, bounded by a semaphore sized
     /// to `OCR_CONCURRENCY`. Each page's render and OCR run on the blocking
-    /// thread pool.
+    /// thread pool. `pdf_bytes` is shared across tasks via `Arc` (no per-page
+    /// clone of the whole buffer).
     async fn ocr_pages_concurrently(
         &self,
-        pdf_bytes: Vec<u8>,
+        pdf_bytes: Arc<[u8]>,
         pages: &[usize],
     ) -> Result<Vec<ExtractedPage>, ExtractionError> {
         let sem = Arc::new(tokio::sync::Semaphore::new(self.ocr_concurrency));
@@ -182,12 +186,11 @@ impl PdfUseCase {
             set.spawn(async move {
                 let _permit = permit;
                 // Render (CPU-bound) off the async runtime.
-                let image =
-                    tokio::task::spawn_blocking(move || renderer.render_page(&bytes, idx, OCR_DPI))
-                        .await
-                        .map_err(|e| {
-                            ExtractionError::Internal(format!("render task failed: {e}"))
-                        })??;
+                let image = tokio::task::spawn_blocking(move || {
+                    renderer.render_page(bytes.as_ref(), idx, OCR_DPI)
+                })
+                .await
+                .map_err(|e| ExtractionError::Internal(format!("render task failed: {e}")))??;
                 // OCR (CPU-bound) off the async runtime.
                 let text = tokio::task::spawn_blocking(move || ocr.ocr_page(&image))
                     .await
