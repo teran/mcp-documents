@@ -26,14 +26,14 @@ ocr-native = ["dep:tesseract-rs"]
 [dependencies]
 # MCP framework. Default features include `server`; `transport-io` enables the
 # stdio transport (`rmcp::transport::stdio`).
-rmcp = { version = "3.1.2", features = ["server", "transport-io"] }
+rmcp = { version = "3.1.4", features = ["server", "transport-io"] }
 # Document -> Markdown engine (PDF via pdf-inspector internally).
-anydoc = "0.1.8"
+anydoc = "0.2.3"
 # Pure-Rust PDF page -> image rasterizer (no native deps).
-pdf-render = "1.0.0-beta.17"
+pdf-render = "1.0.0-beta.18"
 # Per-page PDF text extraction + per-page classification (real TextBased/
 # Scanned/ImageBased/Mixed + page ranges). Used directly for the PDF path.
-pdf-inspector = "0.1.8"
+pdf-inspector = "1.17.0"
 # Streaming CSV parsing (memory < file size) for the dedicated CSV adapter.
 csv = "1.4"
 # Reading .xls/.xlsx workbooks (sheet listing + sheet/row extraction).
@@ -50,7 +50,7 @@ serde = { version = "1", features = ["derive"] }
 schemars = "1"
 # Base64-decode for the optional `bytes` tool input (clients that pass the
 # file content to the model as base64 instead of a path).
-base64 = "0.22"
+base64 = "0.23"
 
 # OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
 tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }
