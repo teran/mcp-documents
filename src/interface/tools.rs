@@ -1,7 +1,7 @@
 //! MCP tool parameter types and result/error formatting helpers.
 //!
 //! Also centralizes source construction + validation (input-size limit and
-//! `ALLOWROOT`), so every tool enforces the same constraints.
+//! `ALLOW_ROOT_DIR`), so every tool enforces the same constraints.
 
 use std::path::PathBuf;
 
@@ -136,7 +136,7 @@ source_params! {
 /// (decoding them), otherwise fall back to the file `path`.
 ///
 /// Applies `MAX_INPUT_BYTES` **before** base64 decode (via a decoded-size
-/// estimate) and `ALLOWROOT` validation + canonicalization for paths.
+/// estimate) and `ALLOW_ROOT_DIR` validation + canonicalization for paths.
 pub fn source_from_params(path: &str, bytes: Option<&str>) -> Result<Source, ExtractionError> {
     let source = match bytes {
         Some(b64) => {
@@ -157,7 +157,7 @@ pub fn source_from_params(path: &str, bytes: Option<&str>) -> Result<Source, Ext
         }
         None => Source::Path(PathBuf::from(path)),
     };
-    // Validate the input size and (for paths) ALLOWROOT; canonicalize paths.
+    // Validate the input size and (for paths) ALLOW_ROOT_DIR; canonicalize paths.
     validate_source(&source)
 }
 

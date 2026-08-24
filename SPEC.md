@@ -184,7 +184,7 @@ mcp-documents/
 │   │   ├── presentation.rs        # AnyDocPresentationReader (pptx via zip/quick-xml; .ppt via anydoc)
 │   │   ├── csv.rs                 # CsvStreamReader (streaming)
 │   │   ├── table.rs               # render_table (Markdown table for CSV/xls/xlsx)
-│   │   ├── file_reader.rs         # file read + input/ALLOWROOT validation
+│   │   ├── file_reader.rs         # file read + input/ALLOW_ROOT_DIR validation
 │   │   ├── error_map.rs           # library errors → ExtractionError
 │   │   ├── noop_ocr.rs            # NoopOcrProvider (OCR off)
 │   │   └── tesseract_ocr.rs       # TesseractOcrProvider (ocr-native only)
@@ -522,7 +522,7 @@ The OCR engine is **vendored/compiled into the binary at build time** and the re
 
 ### 10.1 Trust model
 
-- **Path access:** treat `path` inputs as untrusted (MCP clients may be driven by untrusted prompts). The server **canonicalizes** every path and **restricts reads to `ALLOWROOT`** (default `/`, i.e. the whole filesystem). This is an **arbitrary-file-read-by-design** boundary: an untrusted client (or one steered by prompt injection) can read any file within `ALLOWROOT` that the process user can read. The MCP client is assumed trusted.
+- **Path access:** treat `path` inputs as untrusted (MCP clients may be driven by untrusted prompts). The server **canonicalizes** every path and **restricts reads to `ALLOW_ROOT_DIR`** (default `/`, i.e. the whole filesystem). This is an **arbitrary-file-read-by-design** boundary: an untrusted client (or one steered by prompt injection) can read any file within `ALLOW_ROOT_DIR` that the process user can read. The MCP client is assumed trusted.
 - **Size limits:** `MAX_INPUT_BYTES` (default 250 MiB) caps input size — enforced **before** base64 decode and before/while reading a path file. Exceeding → `ExtractionError::ResourceLimit` → tool-level error, never an OOM.
 - **Bytes mode:** prefer content-based detection over trusting a caller-supplied extension (extension is only a fallback for contentless formats like CSV).
 - **Encrypted files:** return `Encrypted` without attempting to bypass.
@@ -541,7 +541,7 @@ All settings have safe defaults, are unprefixed (no `MCP_`), and are read at cal
 | `OCR_MAX_PAGES` | `300` | Per-request cap on the number of PDF pages OCR'd. Exceeding → `ResourceLimit`. |
 | `OCR_CONCURRENCY` | CPU cores (`available_parallelism`) | Max PDF pages OCR'd in parallel per request (semaphore). |
 | `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned size of a doc/docx/rtf `word_range` chunk (guards a single huge "word"). Exceeding → `ResourceLimit`. |
-| `ALLOWROOT` | `/` (Unix) / system volume root (Windows) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
+| `ALLOW_ROOT_DIR` | `/` (Unix) / system volume root (Windows) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
 
 ## 11. Testing & Coverage Strategy (≥ 85% line coverage)
 

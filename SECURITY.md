@@ -38,7 +38,7 @@ The following are in scope for security review:
 
 The following controls bound that model:
 
-- **`ALLOWROOT`** (default `/`) — every `path` is **canonicalized** (symlinks
+- **`ALLOW_ROOT_DIR`** (default `/`) — every `path` is **canonicalized** (symlinks
   resolved) and must fall within this root; paths outside it are rejected. Set
   it to a specific directory to narrow the read scope.
 - **`MAX_INPUT_BYTES`** (default 250 MiB) — caps input size (file size or

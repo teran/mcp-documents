@@ -3,7 +3,7 @@
 //! Enforces two global safety constraints for every tool:
 //! - [`validate_source`] checks the input size against `MAX_INPUT_BYTES`
 //!   (before reading / decoding) and
-//! - [`canonicalize_within_root`] ensures every path is inside `ALLOWROOT`.
+//! - [`canonicalize_within_root`] ensures every path is inside `ALLOW_ROOT_DIR`.
 
 use std::path::{Path, PathBuf};
 
@@ -22,9 +22,9 @@ pub fn read_source_bytes(source: &Source) -> Result<Vec<u8>, ExtractionError> {
     source.read_bytes()
 }
 
-/// Canonicalize `path` and ensure it is within `ALLOWROOT`.
+/// Canonicalize `path` and ensure it is within `ALLOW_ROOT_DIR`.
 ///
-/// On Unix `ALLOWROOT` defaults to `/` (the whole filesystem), so this is a
+/// On Unix `ALLOW_ROOT_DIR` defaults to `/` (the whole filesystem), so this is a
 /// no-op gate unless an operator narrows it. On Windows the analogous default
 /// is the system volume root (`%system disk%:\`).
 pub fn canonicalize_within_root(path: &Path) -> Result<PathBuf, ExtractionError> {
@@ -34,7 +34,7 @@ pub fn canonicalize_within_root(path: &Path) -> Result<PathBuf, ExtractionError>
     let root_canon = std::fs::canonicalize(&root).unwrap_or(root);
     if !canonical.starts_with(&root_canon) {
         return Err(ExtractionError::Io(format!(
-            "path {} is outside ALLOWROOT {}",
+            "path {} is outside ALLOW_ROOT_DIR {}",
             canonical.display(),
             root_canon.display()
         )));
@@ -43,7 +43,7 @@ pub fn canonicalize_within_root(path: &Path) -> Result<PathBuf, ExtractionError>
 }
 
 /// Validate a [`Source`] against the input-size limit and (for paths) the
-/// `ALLOWROOT` root, returning a [`Source`] whose path has been canonicalized.
+/// `ALLOW_ROOT_DIR` root, returning a [`Source`] whose path has been canonicalized.
 ///
 /// This must be called **before** base64 decode (for bytes the decoded length
 /// estimate is checked by the caller) and before reading a path file.
@@ -156,13 +156,13 @@ mod tests {
     #[test]
     fn canonicalize_within_root_rejects_outside() {
         let _g = lock();
-        // Set a narrow ALLOWROOT to a temp dir and confirm a path outside it is
+        // Set a narrow ALLOW_ROOT_DIR to a temp dir and confirm a path outside it is
         // rejected. The outside path must EXIST so `std::fs::canonicalize`
         // succeeds and the `starts_with(&root_canon)` rejection is genuinely
         // exercised (a missing path would fail earlier, at canonicalize).
         let dir = std::env::temp_dir().join(format!("mcp-root-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        unsafe { std::env::set_var("ALLOWROOT", &dir) };
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
 
         let outside_dir =
             std::env::temp_dir().join(format!("mcp-root-outside-{}", std::process::id()));
@@ -174,9 +174,9 @@ mod tests {
         assert!(matches!(err, ExtractionError::Io(_)));
         // The rejection must come from the outside-root branch, not from a
         // canonicalize failure.
-        assert!(err.to_string().contains("outside ALLOWROOT"));
+        assert!(err.to_string().contains("outside ALLOW_ROOT_DIR"));
 
-        unsafe { std::env::remove_var("ALLOWROOT") };
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_dir_all(&outside_dir).unwrap();
     }
@@ -204,10 +204,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let inside = dir.join("f.txt");
         std::fs::write(&inside, b"x").unwrap();
-        unsafe { std::env::set_var("ALLOWROOT", &dir) };
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
         let c = canonicalize_within_root(&inside).unwrap();
         assert!(c.starts_with(std::fs::canonicalize(&dir).unwrap()));
-        unsafe { std::env::remove_var("ALLOWROOT") };
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

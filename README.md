@@ -29,7 +29,7 @@ The server is a **dual-mode binary** — a standalone CLI **and** an MCP stdio s
 
 ### The per-format pipeline
 
-Every tool takes a source — a file **`path`** or base64 **`bytes`** — which is validated (size limit + `ALLOWROOT`) and read once. The pipeline then routes by **detected format** (from content, not the filename extension):
+Every tool takes a source — a file **`path`** or base64 **`bytes`** — which is validated (size limit + `ALLOW_ROOT_DIR`) and read once. The pipeline then routes by **detected format** (from content, not the filename extension):
 
 - **PDF** — a **per-page** pipeline. `pdf-inspector` classifies each page and extracts per-page native text. Pages with a text layer use that text directly; scanned/image-only pages are **rendered to a bitmap** (pure-Rust `pdf_render`) and **OCR'd** (via the `OcrProvider` port). Both are merged in page order, so a **Mixed** PDF interleaves text and OCR pages correctly, and a `page_range` (`page_from`/`page_to`) selects the pages to process. This is the **only** path that uses OCR.
 - **CSV** — a **streaming** adapter (`csv` crate) reads the file row-by-row, so memory stays below file size. `csv_info` does a single pass (row count, column count, header); `csv_extract_markdown` skips to `row_from` and reads `row_to - row_from` rows into a Markdown table (O(range) memory). The header row is always shown.
@@ -191,7 +191,7 @@ Text-only models cannot read PDF/binary attachments — opencode attaches the fi
 Read this before exposing the server beyond a trusted local MCP client.
 
 - **Arbitrary file read by design.** The tools read **local file paths** (`path`). This server is intended to run on a machine the MCP client trusts — an untrusted MCP client (or one steered by untrusted prompt injection) can read any file the process user can read. This is an **arbitrary-file-read** boundary; treat the client as trusted.
-- **`ALLOWROOT` restricts the read scope.** Every `path` is **canonicalized** (symlinks resolved) and must fall within `ALLOWROOT` (default `/`, i.e. the whole filesystem). Set `ALLOWROOT` to a specific directory to narrow what can be read; paths outside it are rejected.
+- **`ALLOW_ROOT_DIR` restricts the read scope.** Every `path` is **canonicalized** (symlinks resolved) and must fall within `ALLOW_ROOT_DIR` (default `/`, i.e. the whole filesystem). Set `ALLOW_ROOT_DIR` to a specific directory to narrow what can be read; paths outside it are rejected.
 - **Input size cap.** `MAX_INPUT_BYTES` (default 250 MiB) caps the input size — enforced for paths (file size) and for `bytes` **before** base64 decode — so an oversized input becomes a `ResourceLimit` tool-level error rather than an OOM.
 - **Bounded OCR.** `OCR_MAX_PAGES` caps the pages OCR'd per request and `OCR_CONCURRENCY` bounds OCR parallelism; `MAX_RETURN_CHARS` caps the size of a doc/docx/rtf `word_range` chunk.
 - **No shell-out / no external execution.** OCR and rendering run in-process with embedded data; nothing is shelled out.
@@ -209,7 +209,7 @@ All settings have safe defaults and no framework prefix. They are read at call t
 | `OCR_MAX_PAGES` | `300` | Per-request cap on the number of PDF pages that are OCR'd. Exceeding → `ResourceLimit`. |
 | `OCR_CONCURRENCY` | CPU cores | Maximum PDF pages OCR'd **in parallel** per request (a semaphore). |
 | `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned size of a doc/docx/rtf `word_range` chunk (guards a single huge "word"). Exceeding → `ResourceLimit`. |
-| `ALLOWROOT` | `/` (whole filesystem on Unix) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
+| `ALLOW_ROOT_DIR` | `/` (whole filesystem on Unix) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
 
 ---
 

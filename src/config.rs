@@ -3,14 +3,14 @@
 //! All settings have safe defaults and are read at call time (so tests can set
 //! them per-case). None of these are MCP-framework settings, so they use
 //! unprefixed names (`MAX_INPUT_BYTES`, `OCR_MAX_PAGES`, `OCR_CONCURRENCY`,
-//! `ALLOWROOT`, `MAX_RETURN_CHARS`).
+//! `ALLOW_ROOT_DIR`, `MAX_RETURN_CHARS`).
 
 use std::path::PathBuf;
 
 /// Global lock serializing tests that mutate process-wide env vars.
 ///
 /// `config`, `tools` and `file_reader` tests all read/write the same env vars
-/// (`MAX_INPUT_BYTES`, `ALLOWROOT`, ...). Each used to define its own local
+/// (`MAX_INPUT_BYTES`, `ALLOW_ROOT_DIR`, ...). Each used to define its own local
 /// `Mutex`, so the full parallel test suite raced on those env vars (e.g. a
 /// `config` test resetting `MAX_INPUT_BYTES` while a `tools` test was mid-way
 /// relying on a value it had just set, causing flaky failures). All such tests
@@ -58,13 +58,13 @@ pub fn max_return_chars() -> usize {
     env_usize("MAX_RETURN_CHARS", DEFAULT_MAX_RETURN_CHARS)
 }
 
-/// Read `ALLOWROOT`, defaulting to `/` (the whole filesystem) on Unix.
+/// Read `ALLOW_ROOT_DIR`, defaulting to `/` (the whole filesystem) on Unix.
 ///
 /// Every path passed to a tool is canonicalized and must be within this root.
 /// On Windows the analogous notion is the system volume root (`%system disk%:\`),
-/// which is the natural `ALLOWROOT` default there.
+/// which is the natural `ALLOW_ROOT_DIR` default there.
 pub fn allowroot() -> PathBuf {
-    match std::env::var("ALLOWROOT") {
+    match std::env::var("ALLOW_ROOT_DIR") {
         Ok(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
         _ => {
             #[cfg(windows)]
@@ -115,7 +115,7 @@ mod tests {
         remove_var("OCR_MAX_PAGES");
         remove_var("OCR_CONCURRENCY");
         remove_var("MAX_RETURN_CHARS");
-        remove_var("ALLOWROOT");
+        remove_var("ALLOW_ROOT_DIR");
         assert_eq!(max_input_bytes(), DEFAULT_MAX_INPUT_BYTES);
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         assert_eq!(max_return_chars(), DEFAULT_MAX_RETURN_CHARS);
