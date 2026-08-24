@@ -28,7 +28,7 @@ ocr-native = ["dep:tesseract-rs"]
 # stdio transport (`rmcp::transport::stdio`).
 rmcp = { version = "3.1.2", features = ["server", "transport-io"] }
 # Document -> Markdown engine (PDF via pdf-inspector internally).
-anydoc = "0.1.8"
+anydoc = "0.2.3"
 # Pure-Rust PDF page -> image rasterizer (no native deps).
 pdf-render = "1.0.0-beta.17"
 # Per-page PDF text extraction + per-page classification (real TextBased/

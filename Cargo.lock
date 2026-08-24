@@ -122,17 +122,16 @@ dependencies = [
 
 [[package]]
 name = "anydoc"
-version = "0.1.8"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b8e42cf43074578dd1d5a6771d1f28282790b2bf4bca60061ff51fd8ca03c09"
+checksum = "cba429594e94170aa99d2e4e0f596719ecc5c5df00269c671bc60c9e08172678"
 dependencies = [
- "calamine",
  "cfb",
  "csv",
  "encoding_rs",
  "flate2",
  "log",
- "pdf-inspector",
+ "pdf-inspector 1.17.0",
  "quick-xml",
  "zip",
 ]
@@ -399,7 +398,6 @@ checksum = "5fa68281b1a76b54a62156474adb06bb380a67e07dd60656e3217152b42183f3"
 dependencies = [
  "atoi_simd",
  "byteorder",
- "chrono",
  "codepage",
  "encoding_rs",
  "fast-float2",
@@ -1796,7 +1794,7 @@ dependencies = [
  "base64 0.22.1",
  "calamine",
  "csv",
- "pdf-inspector",
+ "pdf-inspector 0.1.8",
  "pdf-render",
  "quick-xml",
  "rmcp",
@@ -2051,6 +2049,24 @@ name = "pdf-inspector"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd2f755e49ad38eafbc82ba2bec1c59d57b5bf829b13a8f35e4263bc8913df3a"
+dependencies = [
+ "env_logger",
+ "include_dir",
+ "log",
+ "lopdf",
+ "once_cell",
+ "rayon",
+ "regex",
+ "thiserror",
+ "ttf-parser",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "pdf-inspector"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cdfc6057e1b38a2ae84490c5e64abc5c81738d4d5ac1ccc55cf1a2c9b87334e"
 dependencies = [
  "env_logger",
  "include_dir",
