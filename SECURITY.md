@@ -38,17 +38,24 @@ The following are in scope for security review:
 
 The following controls bound that model:
 
-- **`ALLOW_ROOT_DIR`** (default `/`) — every `path` is **canonicalized** (symlinks
-  resolved) and must fall within this root; paths outside it are rejected. Set
-  it to a specific directory to narrow the read scope.
-- **`MAX_INPUT_BYTES`** (default 250 MiB) — caps input size (file size or
-  decoded base64 `bytes`) before read/decode; exceeding it returns a
+- **`ALLOW_ROOT_DIR`** (default `~/Documents` on Unix, `/` fallback when no home;
+  `~` in the value is expanded) — every `path` is **canonicalized** (symlinks
+  resolved) and must fall within this root; paths outside it are rejected. The
+  container image sets `ALLOW_ROOT_DIR=/data`. Set it explicitly to narrow/widen
+  the read scope for your deployment.
+- **TOCTOU / symlink hardening** — path files are opened with **`O_NOFOLLOW`**
+  and `fstat`'d on the same descriptor, so a terminal symlink or a file that
+  changes between validation and read cannot bypass the size check / root gate.
+- **`MAX_INPUT_BYTES`** (default 250 MiB) — caps input size (file size via
+  `fstat`, or decoded base64 `bytes`) before read/decode; exceeding it returns a
   `ResourceLimit` tool-level error rather than exhausting memory.
+- **`MAX_DECOMPRESSED_BYTES`** (default 256 MiB) — caps each decompressed
+  archive member (e.g. a PPTX slide part), guarding against decompression bombs.
 - **Bounded OCR** — `OCR_MAX_PAGES` (default 300) caps pages OCR'd per request
   and `OCR_CONCURRENCY` (default CPU cores) bounds OCR parallelism; a request
   exceeding the page cap returns a `ResourceLimit` error.
-- **`MAX_RETURN_CHARS`** (default 50M) — safety-net cap on doc/docx/rtf
-  `word_range` output size.
+- **`MAX_RETURN_CHARS`** (default 50M) — safety-net cap on returned output size
+  for all extractors (doc/docx/rtf `word_range`, ppt/pptx, csv, xls/xlsx).
 - **No shell-out / no external execution** — OCR and rendering run in-process
   with embedded data; nothing is shelled out.
 - **Panic isolation** — document parsing/conversion is wrapped in
@@ -62,6 +69,11 @@ vulnerabilities) and **`cargo deny check`** (license + advisory + ban policy)
 on every push/PR. The full `ocr-native` build compiles vendored Tesseract and
 Leptonica from source and embeds `eng`+`rus` tessdata into a single
 self-contained binary; nothing is fetched or executed at runtime.
+
+Container base images are **pinned by digest**, and the downloaded
+`rus.traineddata` model is verified against a **pinned SHA-256** that is also
+baked into the binary and re-checked at startup — a tampered or unexpectedly
+changed model fails the build / startup instead of being shipped.
 
 ## Supported versions
 

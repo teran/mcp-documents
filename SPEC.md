@@ -522,12 +522,13 @@ The OCR engine is **vendored/compiled into the binary at build time** and the re
 
 ### 10.1 Trust model
 
-- **Path access:** treat `path` inputs as untrusted (MCP clients may be driven by untrusted prompts). The server **canonicalizes** every path and **restricts reads to `ALLOW_ROOT_DIR`** (default `/`, i.e. the whole filesystem). This is an **arbitrary-file-read-by-design** boundary: an untrusted client (or one steered by prompt injection) can read any file within `ALLOW_ROOT_DIR` that the process user can read. The MCP client is assumed trusted.
+- **Path access:** treat `path` inputs as untrusted (MCP clients may be driven by untrusted prompts). The server **canonicalizes** every path (resolving symlinks and expanding a leading `~`) and **restricts reads to `ALLOW_ROOT_DIR`** (default `~/Documents` on Unix, `/` fallback when no home; the container sets `ALLOW_ROOT_DIR=/data`). Path files are opened with **`O_NOFOLLOW`** and `fstat`'d on the same descriptor, closing the check/read TOCTOU. This is an **arbitrary-file-read-by-design** boundary: an untrusted client (or one steered by prompt injection) can read any file within `ALLOW_ROOT_DIR` that the process user can read. The MCP client is assumed trusted.
 - **Size limits:** `MAX_INPUT_BYTES` (default 250 MiB) caps input size — enforced **before** base64 decode and before/while reading a path file. Exceeding → `ExtractionError::ResourceLimit` → tool-level error, never an OOM.
 - **Bytes mode:** prefer content-based detection over trusting a caller-supplied extension (extension is only a fallback for contentless formats like CSV).
 - **Encrypted files:** return `Encrypted` without attempting to bypass.
 - **OCR is self-contained:** OCR runs via `tesseract-rs` (vendored, embedded tessdata) in the same process — **no** external binary, no shell-out.
-- **Bounded OCR:** `OCR_MAX_PAGES` caps pages OCR'd per request; `OCR_CONCURRENCY` bounds OCR parallelism; `MAX_RETURN_CHARS` caps a returned word-range chunk.
+- **Bounded OCR:** `OCR_MAX_PAGES` caps pages OCR'd per request; `OCR_CONCURRENCY` bounds OCR parallelism; `MAX_RETURN_CHARS` caps returned output for all extractors.
+- **Decompression cap:** `MAX_DECOMPRESSED_BYTES` caps each decompressed archive member (e.g. a PPTX slide part), guarding against decompression bombs.
 - **Panic isolation:** parsing/conversion is wrapped in `catch_unwind`, so a malformed document becomes a tool-level error, never a crash.
 - No arbitrary command execution; no network egress from the core library.
 
@@ -540,8 +541,9 @@ All settings have safe defaults, are unprefixed (no `MCP_`), and are read at cal
 | `MAX_INPUT_BYTES` | `250 * 1024 * 1024` (250 MiB) | Hard cap on input size (path file size, or decoded base64 `bytes`); enforced before read/decode. Exceeding → `ResourceLimit`. |
 | `OCR_MAX_PAGES` | `300` | Per-request cap on the number of PDF pages OCR'd. Exceeding → `ResourceLimit`. |
 | `OCR_CONCURRENCY` | CPU cores (`available_parallelism`) | Max PDF pages OCR'd in parallel per request (semaphore). |
-| `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned size of a doc/docx/rtf `word_range` chunk (guards a single huge "word"). Exceeding → `ResourceLimit`. |
-| `ALLOW_ROOT_DIR` | `/` (Unix) / system volume root (Windows) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
+| `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned output size for all extractors (doc/docx/rtf `word_range`, ppt/pptx, csv, xls/xlsx). Exceeding → `ResourceLimit`. |
+| `MAX_DECOMPRESSED_BYTES` | `256 * 1024 * 1024` (256 MiB) | Cap on the decompressed size of a single archive member (e.g. a PPTX slide part) — guards against decompression bombs. Exceeding → `ResourceLimit`. |
+| `ALLOW_ROOT_DIR` | `~/Documents` (Unix; `/` fallback if no home) / system volume root (Windows) | Every `path` is canonicalized (leading `~` expanded) and must be within this root; paths outside are rejected. The container sets `ALLOW_ROOT_DIR=/data`. |
 
 ## 11. Testing & Coverage Strategy (≥ 85% line coverage)
 

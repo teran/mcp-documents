@@ -213,11 +213,14 @@ Text-only models cannot read PDF/binary attachments — opencode attaches the fi
 Read this before exposing the server beyond a trusted local MCP client.
 
 - **Arbitrary file read by design.** The tools read **local file paths** (`path`). This server is intended to run on a machine the MCP client trusts — an untrusted MCP client (or one steered by untrusted prompt injection) can read any file the process user can read. This is an **arbitrary-file-read** boundary; treat the client as trusted.
-- **`ALLOW_ROOT_DIR` restricts the read scope.** Every `path` is **canonicalized** (symlinks resolved) and must fall within `ALLOW_ROOT_DIR` (default `/`, i.e. the whole filesystem). Set `ALLOW_ROOT_DIR` to a specific directory to narrow what can be read; paths outside it are rejected.
-- **Input size cap.** `MAX_INPUT_BYTES` (default 250 MiB) caps the input size — enforced for paths (file size) and for `bytes` **before** base64 decode — so an oversized input becomes a `ResourceLimit` tool-level error rather than an OOM.
-- **Bounded OCR.** `OCR_MAX_PAGES` caps the pages OCR'd per request and `OCR_CONCURRENCY` bounds OCR parallelism; `MAX_RETURN_CHARS` caps the size of a doc/docx/rtf `word_range` chunk.
+- **`ALLOW_ROOT_DIR` restricts the read scope.** Every `path` is **canonicalized** (symlinks resolved; a leading `~` is expanded to your home directory) and must fall within `ALLOW_ROOT_DIR`. The default on Unix is **`~/Documents`** (falling back to `/` when the home directory is unavailable, e.g. in minimal containers) — the server reads your documents folder out of the box. Set `ALLOW_ROOT_DIR` to a specific directory to narrow (or `/` to widen) what can be read; paths outside it are rejected. The container image sets `ALLOW_ROOT_DIR=/data` (mount your documents there).
+- **TOCTOU / symlink hardening.** Path files are **opened with `O_NOFOLLOW`** and `fstat`'d on the **same descriptor**, so a symlink or a file that changes between validation and read cannot redirect or race past the size check / root gate.
+- **Input size cap.** `MAX_INPUT_BYTES` (default 250 MiB) caps the input size — enforced for paths (file size via `fstat`) and for `bytes` **before** base64 decode — so an oversized input becomes a `ResourceLimit` tool-level error rather than an OOM.
+- **Decompression cap.** `MAX_DECOMPRESSED_BYTES` (default 256 MiB) caps each decompressed archive member (e.g. a PPTX slide part), guarding against zip/decompression bombs.
+- **Bounded output.** `MAX_RETURN_CHARS` caps the returned chunk for **all** per-format extractors (doc/docx/rtf `word_range`, ppt/pptx, csv, xls/xlsx). `OCR_MAX_PAGES` caps the pages OCR'd per request and `OCR_CONCURRENCY` bounds OCR parallelism.
 - **No shell-out / no external execution.** OCR and rendering run in-process with embedded data; nothing is shelled out.
 - **Panic isolation.** Document parsing/conversion is wrapped in `catch_unwind`, so a malformed document becomes a tool-level error, never a crash.
+- **Supply-chain guard.** The embedded `rus.traineddata` OCR model is verified against a pinned SHA-256 baked into the binary at startup; base container images and the model download are pinned by digest/checksum.
 
 ---
 
@@ -230,8 +233,9 @@ All settings have safe defaults and no framework prefix. They are read at call t
 | `MAX_INPUT_BYTES` | `250 * 1024 * 1024` (250 MiB) | Hard cap on input size (path file size, or decoded base64 `bytes`). Enforced before read/decode. Exceeding → `ResourceLimit`. |
 | `OCR_MAX_PAGES` | `300` | Per-request cap on the number of PDF pages that are OCR'd. Exceeding → `ResourceLimit`. |
 | `OCR_CONCURRENCY` | CPU cores | Maximum PDF pages OCR'd **in parallel** per request (a semaphore). |
-| `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned size of a doc/docx/rtf `word_range` chunk (guards a single huge "word"). Exceeding → `ResourceLimit`. |
-| `ALLOW_ROOT_DIR` | `/` (whole filesystem on Unix) | Every `path` is canonicalized and must be within this root; paths outside are rejected. |
+| `MAX_RETURN_CHARS` | `50_000_000` | Safety-net cap on the returned size of an extraction (doc/docx/rtf `word_range`, ppt/pptx, csv, xls/xlsx). Exceeding → `ResourceLimit`. |
+| `MAX_DECOMPRESSED_BYTES` | `256 * 1024 * 1024` (256 MiB) | Cap on the decompressed size of a single archive member (e.g. a PPTX slide part) — guards against decompression bombs. Exceeding → `ResourceLimit`. |
+| `ALLOW_ROOT_DIR` | `~/Documents` (Unix; `/` fallback if no home) | Every `path` is canonicalized (leading `~` expanded) and must be within this root; paths outside are rejected. The container image sets `ALLOW_ROOT_DIR=/data`. |
 
 ---
 
