@@ -1804,6 +1804,7 @@ dependencies = [
  "rmcp",
  "schemars",
  "serde",
+ "sha2",
  "tesseract-rs",
  "tokio",
  "tokio-test",

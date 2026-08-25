@@ -23,9 +23,46 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
+
 use crate::domain::error::ExtractionError;
 use crate::domain::ports::OcrProvider;
 use crate::domain::result::PageBitmap;
+
+/// Pinned SHA-256 of the `rus.traineddata` (`tessdata_best`) embedded into the
+/// binary.
+///
+/// Supply-chain guard: the `rus` model is the one that must be manually
+/// downloaded at build time (the crate only auto-downloads `eng`/`tur`), so we
+/// bake its expected digest into the binary and verify the embedded bytes at
+/// startup. If the downloaded/provisioned model differs (e.g. a tampered mirror
+/// or an unexpected upstream change), startup fails loudly instead of shipping
+/// an unexpected OCR model. Building with a different model (e.g. `tessdata_fast`)
+/// requires updating this constant and the download/verify steps in the
+/// Dockerfile / CI / Makefile.
+pub const RUS_TESSDATA_SHA256: &str =
+    "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6";
+
+/// Hex-encoded SHA-256 of `bytes`.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Verify the embedded `rus.traineddata` bytes match the pinned SHA-256. Returns
+/// `Internal` on mismatch (a tampered/unchanged-at-build supply-chain event).
+fn verify_embedded_rus() -> Result<(), ExtractionError> {
+    if let Some(bytes) = tesseract_rs::get_embedded_tessdata("rus") {
+        let actual = sha256_hex(&bytes);
+        if actual != RUS_TESSDATA_SHA256 {
+            return Err(ExtractionError::Internal(format!(
+                "embedded rus.traineddata checksum mismatch: expected {RUS_TESSDATA_SHA256}, got {actual}"
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// The stable per-user cache directory that survives across runs.
 ///
@@ -108,6 +145,9 @@ impl TesseractOcrProvider {
     /// Initialize against an explicit cache directory (used by tests to avoid
     /// touching the real user cache).
     pub fn new_with_cache_dir(cache_dir: PathBuf, langs: &str) -> Result<Self, ExtractionError> {
+        // Supply-chain guard: fail fast if the embedded rus model isn't the
+        // pinned one.
+        verify_embedded_rus()?;
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| ExtractionError::Io(format!("create tessdata dir: {e}")))?;
         ensure_embedded_tessdata(&cache_dir)?;
@@ -200,6 +240,22 @@ mod tests {
                 None
             }
         }
+    }
+
+    #[test]
+    fn sha256_hex_matches_known_vector() {
+        // Standard test vector: sha256("abc").
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn verify_embedded_rus_accepts_or_skips() {
+        // On a build that embedded the pinned rus model this passes; if rus is
+        // not embedded it is skipped. Either way it must not panic.
+        let _ = verify_embedded_rus();
     }
 
     #[test]

@@ -54,6 +54,9 @@ base64 = "0.23"
 # Platform constants (O_NOFOLLOW) for TOCTOU-safe, symlink-rejecting opens in
 # the file reader. Infrastructure-only.
 libc = "0.2"
+# SHA-256 of the embedded `rus.traineddata` model, verified at startup as a
+# supply-chain guard. Infrastructure-only.
+sha2 = "0.10"
 
 # OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
 tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }

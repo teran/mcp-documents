@@ -7,7 +7,8 @@
 # Runtime: ships ONLY the single static binary — zero system deps.
 
 ########## Builder ##########
-FROM rust:1.97.1-trixie AS builder
+# Pinned by digest for supply-chain reproducibility.
+FROM rust:1.97.1-trixie@sha256:b1b3c9c0d921d7fa0a6d1f9ec7e4eab87f8c8ec97644c3d791450f131dec813f AS builder
 
 # Build-time deps: C++ toolchain + CMake (to compile vendored Tesseract/Leptonica)
 # + curl (to fetch rus.traineddata from a mirror). None needed at runtime.
@@ -23,12 +24,15 @@ COPY Cargo.toml Cargo.lock* ./
 # Pre-provision rus.traineddata into the tesseract-rs tessdata cache dir BEFORE
 # building. The crate only auto-downloads eng/tur, so rus must be present or
 # embedding silently fails. Fetch from a pinned mirror (jsdelivr) to avoid
-# flaky GitHub raw. We use `tessdata_best` (accurate LSTM models) — it is larger
-# (rus ≈ 15 MB vs ≈ 4 MB for `fast`), adding ~22 MB to the binary over `fast`.
-# Switch the URL to tessdata_fast if you prefer a smaller binary.
+# flaky GitHub raw, then verify its SHA-256 (matches RUS_TESSDATA_SHA256 in
+# src/infrastructure/tesseract_ocr.rs) so a tampered/unchanged model fails the
+# build instead of being embedded. We use `tessdata_best` (accurate LSTM models)
+# — it is larger (rus ≈ 15 MB vs ≈ 4 MB for `fast`), adding ~22 MB to the binary
+# over `fast`. Switch to tessdata_fast only together with the pinned digest.
 RUN mkdir -p ~/.tesseract-rs/tessdata \
     && curl -fL -o ~/.tesseract-rs/tessdata/rus.traineddata \
-         "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata"
+         "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata" \
+    && echo "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6  ~/.tesseract-rs/tessdata/rus.traineddata" | sha256sum -c -
 
 # Embed English + Russian OCR (default is eng,tur — Russian is NOT included).
 ENV TESSERACT_EMBED_LANGUAGES=eng,rus
@@ -62,8 +66,9 @@ RUN mkdir -p /app/rootfs/cache
 # MATCHES the builder's ABI and ships glibc + libstdc++ + libgcc.
 # DO NOT switch to `cc-debian12` (bookworm, glibc 2.36): it cannot load a
 # trixie-built binary. The `cc` variant (not `base`/`static`) is required
-# because it bundles libstdc++ alongside glibc.
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
+# because it bundles libstdc++ alongside glibc. Pinned by digest for
+# supply-chain reproducibility.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:a77defd6fedbb3392b175ba8ea3d1c22be963c1597c248c3ba987ddd80bfb512 AS runtime
 
 # The binary is self-contained with respect to OCR: embedded eng+rus tessdata,
 # pure-Rust renderer, static OCR libs. Only the base glibc/libstdc++ are needed.
@@ -79,6 +84,12 @@ COPY --from=builder /app/bin/mcp-documents /usr/local/bin/mcp-documents
 # present in this image and world-writable (1777), so it also works for nobody.)
 COPY --from=builder --chown=65534:65534 /app/rootfs/cache /cache
 ENV XDG_CACHE_HOME=/cache
+
+# Sandbox the read scope: this container is a service, so `~/Documents` (the
+# default when ALLOW_ROOT_DIR is unset) does not exist here. Restrict reads to
+# /data — mount the directory of documents you want the server to be able to
+# read at /data (see SECURITY.md).
+ENV ALLOW_ROOT_DIR=/data
 
 # The `:nonroot` base tag defaults to UID 65532; we explicitly target nobody
 # 65534 to match the writable /cache above. Using the numeric UID is

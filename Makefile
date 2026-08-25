@@ -44,6 +44,9 @@ prepare-tessdata:
 			echo "==> $$lang.traineddata already present"; \
 		fi; \
 	done
+	@# Supply-chain guard: verify rus against the pinned SHA-256 (matches
+	@# RUS_TESSDATA_SHA256 in src/infrastructure/tesseract_ocr.rs).
+	@echo "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6  $(TESSDATA_DIR)/rus.traineddata" | sha256sum -c -
 
 ## Full self-contained binary with OCR (needs C++/CMake + eng+rus tessdata).
 build: prepare-tessdata

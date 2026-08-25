@@ -65,10 +65,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential cmake curl
       - name: Provision rus.traineddata for tesseract-rs
+        # SHA-256 matches RUS_TESSDATA_SHA256 (supply-chain guard).
         run: |
           mkdir -p "$HOME/.tesseract-rs/tessdata"
           curl -fL -o "$HOME/.tesseract-rs/tessdata/rus.traineddata" \
             "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata"
+          echo "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6  $HOME/.tesseract-rs/tessdata/rus.traineddata" | sha256sum -c -
       - name: cargo build --release --features ocr-native
         run: cargo build --release --features ocr-native
       - name: Upload release asset
