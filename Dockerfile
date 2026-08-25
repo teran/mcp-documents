@@ -29,10 +29,12 @@ COPY Cargo.toml Cargo.lock* ./
 # build instead of being embedded. We use `tessdata_best` (accurate LSTM models)
 # — it is larger (rus ≈ 15 MB vs ≈ 4 MB for `fast`), adding ~22 MB to the binary
 # over `fast`. Switch to tessdata_fast only together with the pinned digest.
-RUN mkdir -p ~/.tesseract-rs/tessdata \
-    && curl -fL -o ~/.tesseract-rs/tessdata/rus.traineddata \
+# NOTE: use `$HOME` (not `~`) in the sha256sum -c line — sha256sum does NOT
+# expand `~`, so a literal `~` would make it look for a non-existent file.
+RUN mkdir -p "$HOME/.tesseract-rs/tessdata" \
+    && curl -fL -o "$HOME/.tesseract-rs/tessdata/rus.traineddata" \
          "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/rus.traineddata" \
-    && echo "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6  ~/.tesseract-rs/tessdata/rus.traineddata" | sha256sum -c -
+    && echo "b617eb6830ffabaaa795dd87ea7fd251adfe9cf0efe05eb9a2e8128b7728d6b6  $HOME/.tesseract-rs/tessdata/rus.traineddata" | sha256sum -c -
 
 # Embed English + Russian OCR (default is eng,tur — Russian is NOT included).
 ENV TESSERACT_EMBED_LANGUAGES=eng,rus
