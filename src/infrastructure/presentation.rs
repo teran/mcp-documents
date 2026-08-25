@@ -225,6 +225,10 @@ mod tests {
 
     #[test]
     fn pptx_extracts_slides_and_counts() {
+        // Take the env lock so a parallel `pptx_decompression_cap_is_enforced`
+        // test that mutates MAX_DECOMPRESSED_BYTES cannot make this read a tiny
+        // cap and spuriously fail (env-var race).
+        let _g = lock();
         let r = AnyDocPresentationReader::new(None);
         let bytes = make_pptx(r#"<p:sld><a:t>Hi</a:t></p:sld>"#);
         let info = r.presentation_info(&Source::Bytes(bytes.clone())).unwrap();

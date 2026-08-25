@@ -10,15 +10,11 @@
 all-features = true
 
 [licenses]
-# Reject any copyleft license (GPL / AGPL / LGPL / MPL) by default. See the
-# `r-efi` exception below for the one crate that offers a copyleft option.
-copyleft = "deny"
-
-# A crate with an unrecognizable license is a warning (not a hard failure) so
-# that odd-but-permissive expressions (e.g. `MIT/Apache-2.0` or `Unlicense/MIT`)
-# don't block the gate. The allow-list below still hard-fails on genuinely
-# disallowed licenses.
-unlicensed = "warn"
+# cargo-deny config format v2 (see EmbarkStudios/cargo-deny#611): in this format
+# `unlicensed` and `copyleft` default to `deny`, and any license NOT in the
+# `allow` (or `exceptions`) list is denied. The `r-efi` exception below covers
+# the one crate that offers a copyleft option (we use its MIT option).
+version = 2
 
 # Only auto-accept a license guessed from a LICENSE file when we are confident.
 confidence-threshold = 0.8
@@ -35,6 +31,7 @@ allow = [
   "Zlib",
   "Unlicense",
   "CC0-1.0",
+  "CDLA-Permissive-2.0",
   "NCSA",
   "Unicode-3.0",
 ]
@@ -42,11 +39,12 @@ allow = [
 # `r-efi` is triple-licensed `MIT OR Apache-2.0 OR LGPL-2.1-or-later`. We use
 # the permissive MIT/Apache-2.0 option (it enters the tree only via the
 # dev/test graph). This exception documents that the LGPL option is deliberately
-# not exercised; without it the copyleft = "deny" policy above would flag it.
+# not exercised; without it the default "deny anything not allowed" policy would
+# flag it.
 [[licenses.exceptions]]
 name = "r-efi"
 version = "*"
-license = "MIT"
+allow = ["MIT"]
 
 # Tesseract and Leptonica are VENDORED and compiled from source at build time —
 # they are NOT Cargo dependencies, so cargo-deny does not scan them. They are
@@ -62,3 +60,14 @@ wildcards = "allow"
 [advisories]
 # Advisories are also checked by `cargo audit`; keep the OSV/DB fresh.
 yanked = "deny"
+# `ttf-parser` is unmaintained (RUSTSEC-2026-0192) but has no safe upgrade — it
+# is a transitive dependency of the PDF stack (lopdf / pdf-inspector /
+# pdf-render), is widely used and well-tested, and cannot be replaced without an
+# upstream change. Tracked in the security audit as a low-severity note.
+# `paste` is likewise unmaintained (RUSTSEC-2024-0436) but still the de-facto
+# proc-macro helper pulled in transitively (via darling -> rmcp-macros); it is
+# stable and widely used.
+ignore = [
+  "RUSTSEC-2026-0192",
+  "RUSTSEC-2024-0436",
+]
