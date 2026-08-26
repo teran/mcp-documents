@@ -100,36 +100,51 @@ pub fn expand_tilde(input: &str) -> PathBuf {
     PathBuf::from(trimmed)
 }
 
-/// Read `ALLOW_ROOT_DIR`, defaulting to `~/Documents` on Unix (falling back to
-/// `/` when the home directory is unavailable, e.g. in minimal containers).
-///
-/// Every path passed to a tool is canonicalized and must be within this root,
-/// so a narrower default keeps the sandbox useful out of the box while still
-/// allowing access to the user's document folder. Operators that want more
-/// (or different) access must set `ALLOW_ROOT_DIR` explicitly (production
-/// deployments — especially containers — should always set it).
-/// On Windows the analogous default is the system volume root (`%system disk%:\`).
-pub fn allowroot() -> PathBuf {
-    match std::env::var("ALLOW_ROOT_DIR") {
-        Ok(v) if !v.trim().is_empty() => expand_tilde(&v),
-        _ => {
-            #[cfg(windows)]
-            {
-                // System disk root, e.g. `C:\`.
-                match std::env::var("SystemDrive") {
-                    Ok(d) if !d.is_empty() => PathBuf::from(format!("{d}\\")),
-                    _ => PathBuf::from("C:\\"),
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                match home_dir() {
-                    Some(home) => home.join("Documents"),
-                    None => PathBuf::from("/"),
-                }
-            }
+/// The default root(s) when `ALLOW_ROOT_DIR` is unset.
+fn default_roots() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        // System disk root, e.g. `C:\`.
+        let d = match std::env::var("SystemDrive") {
+            Ok(d) if !d.is_empty() => format!("{d}\\"),
+            _ => "C:\\".into(),
+        };
+        vec![PathBuf::from(d)]
+    }
+    #[cfg(not(windows))]
+    {
+        match home_dir() {
+            Some(home) => vec![home.join("Documents")],
+            None => vec![PathBuf::from("/")],
         }
     }
+}
+
+/// Read `ALLOW_ROOT_DIR` and return **one or more** root directories.
+///
+/// The variable may hold a single path or a comma/semicolon-separated list of
+/// paths (each `~`-expanded). When unset/empty it defaults to `~/Documents` on
+/// Unix (falling back to `/` when the home directory is unavailable, e.g. in
+/// minimal containers) and to the system volume root on Windows. Every `path`
+/// passed to a tool is canonicalized and must be within **any** of these roots.
+pub fn allowroots() -> Vec<PathBuf> {
+    match std::env::var("ALLOW_ROOT_DIR") {
+        Ok(v) if !v.trim().is_empty() => v
+            .split([';', ','])
+            .map(|s| expand_tilde(s.trim()))
+            .filter(|p| !p.as_os_str().is_empty())
+            .collect::<Vec<_>>(),
+        _ => default_roots(),
+    }
+}
+
+/// The primary `ALLOW_ROOT_DIR` (first entry), for callers that want a single
+/// root. See [`allowroots`] for the full (possibly multiple) set.
+pub fn allowroot() -> PathBuf {
+    allowroots()
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// Parse a `usize` from the given env var, falling back to `default` on
@@ -205,6 +220,25 @@ mod tests {
         assert_eq!(expand_tilde("rel/path"), PathBuf::from("rel/path"));
         // `~user` is intentionally NOT expanded (only `~` and `~/`).
         assert_eq!(expand_tilde("~other/x"), PathBuf::from("~other/x"));
+    }
+
+    #[test]
+    fn allowroots_splits_and_expands_multiple() {
+        let _g = lock();
+        // Unset → a single default root.
+        remove_var("ALLOW_ROOT_DIR");
+        assert_eq!(allowroots().len(), 1);
+
+        // Comma/semicolon-separated list, each entry `~`-expanded.
+        set_var("ALLOW_ROOT_DIR", "/a/b, ~/Downloads;/c/d");
+        let roots = allowroots();
+        assert_eq!(roots.len(), 3);
+        assert_eq!(roots[0], PathBuf::from("/a/b"));
+        if let Some(home) = home_dir() {
+            assert_eq!(roots[1], home.join("Downloads"));
+        }
+        assert_eq!(roots[2], PathBuf::from("/c/d"));
+        remove_var("ALLOW_ROOT_DIR");
     }
 
     #[test]

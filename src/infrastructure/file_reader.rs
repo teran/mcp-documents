@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::config::{allowroot, max_input_bytes};
+use crate::config::{allowroots, max_input_bytes};
 use crate::domain::error::ExtractionError;
 use crate::domain::result::Source;
 
@@ -67,24 +67,31 @@ pub fn read_source_bytes(source: &Source) -> Result<Vec<u8>, ExtractionError> {
     }
 }
 
-/// Canonicalize `path` and ensure it is within `ALLOW_ROOT_DIR`.
+/// Canonicalize `path` and ensure it is within **any** `ALLOW_ROOT_DIR`.
 ///
 /// On Unix `ALLOW_ROOT_DIR` defaults to `~/Documents` (falling back to `/` when
-/// the home directory is unavailable), so this gates reads to the user's
-/// documents folder unless an operator narrows/widens it. On Windows the
-/// analogous default is the system volume root (`%system disk%:\`). Symlinks in
-/// the path are resolved here; the final component is re-checked with a
-/// no-follow open in [`validate_source`] to prevent a race.
+/// the home directory is unavailable) and may hold a comma/semicolon-separated
+/// list of roots; on Windows the analogous default is the system volume root
+/// (`%system disk%:\`). Symlinks in the path are resolved here; the final
+/// component is re-checked with a no-follow open in [`validate_source`] to
+/// prevent a race.
 pub fn canonicalize_within_root(path: &Path) -> Result<PathBuf, ExtractionError> {
     let canonical = std::fs::canonicalize(path)
         .map_err(|e| ExtractionError::Io(format!("failed to resolve {}: {e}", path.display())))?;
-    let root = allowroot();
-    let root_canon = std::fs::canonicalize(&root).unwrap_or(root);
-    if !canonical.starts_with(&root_canon) {
+    let root_canons: Vec<PathBuf> = allowroots()
+        .iter()
+        .map(|r| std::fs::canonicalize(r).unwrap_or_else(|_| r.clone()))
+        .collect();
+    let inside = root_canons.iter().any(|rc| canonical.starts_with(rc));
+    if !inside {
+        let listed = root_canons
+            .iter()
+            .map(|r| r.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(ExtractionError::Io(format!(
-            "path {} is outside ALLOW_ROOT_DIR {}",
-            canonical.display(),
-            root_canon.display()
+            "path {} is outside ALLOW_ROOT_DIR {listed}",
+            canonical.display()
         )));
     }
     Ok(canonical)
