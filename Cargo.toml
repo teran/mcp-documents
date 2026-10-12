@@ -39,7 +39,7 @@ csv = "1.4"
 # Reading .xls/.xlsx workbooks (sheet listing + sheet/row extraction).
 calamine = "0.36"
 # Reading PPTX slide parts (OOXML zip members) for slide count + ranges.
-zip = { version = "8.6", default-features = false }
+zip = { version = "9.0", default-features = false }
 # Parsing slide XML (<a:t> text) when extracting PPTX slides.
 quick-xml = "0.41"
 
