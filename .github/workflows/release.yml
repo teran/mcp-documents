@@ -74,7 +74,7 @@ jobs:
       - name: cargo build --release --features ocr-native
         run: cargo build --release --features ocr-native
       - name: Upload release asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: target/release/mcp-documents
           generate_release_notes: true
