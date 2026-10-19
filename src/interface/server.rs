@@ -677,7 +677,8 @@ mod tests {
     use super::*;
     use crate::interface::tools::{
         ClassifyParams, CsvExtractParams, CsvInfoParams, PdfExtractParams, PdfInfoParams,
-        TextInfoParams,
+        PresentationExtractParams, PresentationInfoParams, SpreadsheetExtractParams,
+        SpreadsheetInfoParams, TextExtractParams, TextInfoParams,
     };
 
     use base64::Engine as _;
@@ -915,6 +916,102 @@ mod tests {
             .unwrap();
         assert_eq!(res.is_error, Some(true));
     }
+
+    #[tokio::test]
+    async fn all_success_paths_cover_readers() {
+        // Text word-processor readers.
+        let s = server(DocumentKind::Docx);
+        assert!(
+            !s.docx_info(Parameters(TextInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        assert!(
+            !s.docx_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                word_from: None,
+                word_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        // Spreadsheet readers.
+        let s = server(DocumentKind::Xlsx);
+        assert!(
+            !s.xlsx_info(Parameters(SpreadsheetInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        assert!(
+            !s.xlsx_extract_markdown(Parameters(SpreadsheetExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                sheet: None,
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        // Presentation readers.
+        let s = server(DocumentKind::Pptx);
+        assert!(
+            !s.pptx_info(Parameters(PresentationInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        assert!(
+            !s.pptx_extract_markdown(Parameters(PresentationExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                slide_from: None,
+                slide_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        // CSV info success (header JSON).
+        let s = server(DocumentKind::Csv);
+        assert!(
+            !s.csv_info(Parameters(CsvInfoParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn classify_extract_text_uses_fallback() {
+        let s = server(DocumentKind::Docx);
+        let r = s.classify.extract_text(&Source::Bytes(vec![1])).unwrap();
+        assert_eq!(r.markdown, "fallback");
+    }
 }
 
 #[cfg(test)]
@@ -940,8 +1037,9 @@ mod extra_tests {
 
     use super::*;
     use crate::interface::tools::{
-        PdfInfoParams, PresentationExtractParams, PresentationInfoParams, SpreadsheetExtractParams,
-        SpreadsheetInfoParams, TextExtractParams, TextInfoParams,
+        CsvExtractParams, CsvInfoParams, PdfInfoParams, PresentationExtractParams,
+        PresentationInfoParams, SpreadsheetExtractParams, SpreadsheetInfoParams, TextExtractParams,
+        TextInfoParams,
     };
 
     fn b64(payload: &[u8]) -> Option<String> {
@@ -1292,6 +1390,37 @@ mod extra_tests {
             Some(false)
         );
     }
+
+    #[tokio::test]
+    async fn csv_tools_succeed_and_classify_fallback() {
+        let s = svc(DocumentKind::Csv);
+        assert!(
+            !s.csv_info(Parameters(CsvInfoParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        assert!(
+            !s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        // Whole-document fallback via the classifier.
+        let s = svc(DocumentKind::Docx);
+        let r = s.classify.extract_text(&Source::Bytes(vec![1])).unwrap();
+        assert_eq!(r.markdown, "f");
+    }
 }
 
 #[cfg(test)]
@@ -1359,5 +1488,899 @@ mod annotation_tests {
             expect_read_only(&tool.annotations, &name);
             expect_description(&tool.description, &name);
         }
+    }
+}
+
+#[cfg(test)]
+mod cov_tests {
+    //! Coverage-oriented tests driving every tool method (info + extract for
+    //! doc/docx/rtf/xls/xlsx/ppt/pptx/csv + classify + pdf), including the
+    //! source-validation error branch and the use-case error branch of each
+    //! tool, plus the `to_range` Some/None branches and the non-empty
+    //! `pages_needing_ocr` JSON mapping.
+
+    use std::sync::Arc;
+
+    use crate::application::{
+        ClassifyDocumentUseCase, CsvUseCase, PdfUseCase, PresentationUseCase, SpreadsheetUseCase,
+        TextDocUseCase,
+    };
+    use crate::domain::document::{Classification, DocumentKind, PageClassification, PdfType};
+    use crate::domain::error::ExtractionError;
+    use crate::domain::meta::{
+        CsvInfo, PdfInfo, PresentationInfo, SheetInfo, SpreadsheetInfo, TextDocumentInfo,
+    };
+    use crate::domain::ports::{
+        CsvReader, DocumentExtractor, OcrProvider, PdfPageRenderer, PdfTextSource,
+        PresentationReader, SpreadsheetReader, TextDocumentReader,
+    };
+    use crate::domain::result::{ExtractedPage, ExtractionResult, PageBitmap, Source};
+    use rmcp::handler::server::wrapper::Parameters;
+
+    use super::*;
+    use crate::interface::tools::{
+        ClassifyParams, CsvExtractParams, CsvInfoParams, PdfExtractParams, PdfInfoParams,
+        PresentationExtractParams, PresentationInfoParams, SpreadsheetExtractParams,
+        SpreadsheetInfoParams, TextExtractParams, TextInfoParams,
+    };
+    use base64::Engine as _;
+
+    /// Bad base64 used to force the `source_from_params` error branch.
+    const BAD: &str = "!!!not-base64!!!";
+
+    fn b64(p: &[u8]) -> Option<String> {
+        Some(base64::engine::general_purpose::STANDARD.encode(p))
+    }
+
+    // ---- Configurable fakes ------------------------------------------------
+
+    #[derive(Clone)]
+    struct Cx {
+        kind: DocumentKind,
+        ocr_pages: Vec<usize>,
+        classify_err: Option<ExtractionError>,
+        extract_err: Option<ExtractionError>,
+    }
+    impl DocumentExtractor for Cx {
+        fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+            if let Some(e) = &self.classify_err {
+                return Err(e.clone());
+            }
+            let pdf_type = if self.kind == DocumentKind::Pdf {
+                Some(PdfType::Mixed)
+            } else {
+                None
+            };
+            Ok(Classification {
+                kind: self.kind,
+                pdf_type,
+                pages_needing_ocr: self
+                    .ocr_pages
+                    .iter()
+                    .map(|&i| PageClassification::new(i, true, 0.9))
+                    .collect(),
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+            if let Some(e) = &self.extract_err {
+                return Err(e.clone());
+            }
+            Ok(ExtractionResult::markdown_only(
+                self.kind,
+                None,
+                "fallback".into(),
+            ))
+        }
+    }
+
+    struct PT {
+        info: PdfInfo,
+        info_err: Option<ExtractionError>,
+        extract_err: Option<ExtractionError>,
+    }
+    impl PdfTextSource for PT {
+        fn pdf_info(&self, _s: &Source) -> Result<PdfInfo, ExtractionError> {
+            if let Some(e) = &self.info_err {
+                return Err(e.clone());
+            }
+            Ok(self.info.clone())
+        }
+        fn extract_pages(
+            &self,
+            _s: &Source,
+            pages: &[usize],
+        ) -> Result<Vec<ExtractedPage>, ExtractionError> {
+            if let Some(e) = &self.extract_err {
+                return Err(e.clone());
+            }
+            Ok(pages
+                .iter()
+                .map(|&p| ExtractedPage::local(p, format!("t{p}")))
+                .collect())
+        }
+    }
+    struct RD;
+    impl PdfPageRenderer for RD {
+        fn render_page(&self, _p: &[u8], i: usize, _d: u32) -> Result<PageBitmap, ExtractionError> {
+            PageBitmap::new(8, 8, 1, vec![i as u8; 64])
+        }
+    }
+    struct OC;
+    impl OcrProvider for OC {
+        fn ocr_page(&self, b: &PageBitmap) -> Result<String, ExtractionError> {
+            Ok(format!("ocr-{}", b.data[0]))
+        }
+    }
+
+    struct TR {
+        err: Option<ExtractionError>,
+    }
+    impl TextDocumentReader for TR {
+        fn text_info(&self, _s: &Source) -> Result<TextDocumentInfo, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok(TextDocumentInfo {
+                word_count: 3,
+                char_count: 12,
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<String, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok("one two three".into())
+        }
+    }
+
+    struct SR {
+        err: Option<ExtractionError>,
+    }
+    impl SpreadsheetReader for SR {
+        fn spreadsheet_info(&self, _s: &Source) -> Result<SpreadsheetInfo, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok(SpreadsheetInfo {
+                sheets: vec![SheetInfo {
+                    name: "S1".into(),
+                    rows: Some(2),
+                    cols: Some(2),
+                }],
+            })
+        }
+        fn extract_sheet(
+            &self,
+            _s: &Source,
+            _sh: Option<&str>,
+            _r: Option<Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok("| a | b |".into())
+        }
+    }
+
+    struct PR {
+        err: Option<ExtractionError>,
+    }
+    impl PresentationReader for PR {
+        fn presentation_info(&self, _s: &Source) -> Result<PresentationInfo, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok(PresentationInfo { slide_count: 2 })
+        }
+        fn extract_presentation(
+            &self,
+            _s: &Source,
+            _r: Option<Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok("slide".into())
+        }
+    }
+
+    struct CR {
+        err: Option<ExtractionError>,
+    }
+    impl CsvReader for CR {
+        fn csv_info(&self, _s: &Source) -> Result<CsvInfo, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok(CsvInfo {
+                row_count: 1,
+                column_count: 2,
+                header: vec!["a".into(), "b".into()],
+            })
+        }
+        fn extract_csv(
+            &self,
+            _s: &Source,
+            _r: Option<Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            Ok("csv".into())
+        }
+    }
+
+    // ---- Builder -----------------------------------------------------------
+
+    struct Cfg {
+        kind: DocumentKind,
+        ocr_pages: Vec<usize>,
+        classify_err: Option<ExtractionError>,
+        info_err: Option<ExtractionError>,
+        usecase_err: Option<ExtractionError>,
+    }
+    impl Default for Cfg {
+        fn default() -> Self {
+            Self {
+                kind: DocumentKind::Pdf,
+                ocr_pages: Vec::new(),
+                classify_err: None,
+                info_err: None,
+                usecase_err: None,
+            }
+        }
+    }
+
+    fn pdf_info_of(cfg: &Cfg) -> PdfInfo {
+        PdfInfo {
+            page_count: 2,
+            pdf_type: PdfType::Mixed,
+            pages_needing_ocr: cfg
+                .ocr_pages
+                .iter()
+                .map(|&i| PageClassification::new(i, true, 0.9))
+                .collect(),
+        }
+    }
+
+    fn svc(cfg: Cfg) -> DocumentsServer {
+        let cx = Arc::new(Cx {
+            kind: cfg.kind,
+            ocr_pages: cfg.ocr_pages.clone(),
+            classify_err: cfg.classify_err.clone(),
+            extract_err: cfg.usecase_err.clone(),
+        });
+        let pdf_text = Arc::new(PT {
+            info: pdf_info_of(&cfg),
+            info_err: cfg.info_err.clone(),
+            extract_err: cfg.usecase_err.clone(),
+        });
+        let classify = ClassifyDocumentUseCase::new(cx.clone());
+        let pdf = PdfUseCase::new(cx.clone(), pdf_text, Arc::new(RD), Arc::new(OC));
+        let text_doc = TextDocUseCase::new(
+            cx.clone(),
+            Arc::new(TR {
+                err: cfg.usecase_err.clone(),
+            }),
+        );
+        let spreadsheet = SpreadsheetUseCase::new(
+            cx.clone(),
+            Arc::new(SR {
+                err: cfg.usecase_err.clone(),
+            }),
+        );
+        let presentation = PresentationUseCase::new(
+            cx.clone(),
+            Arc::new(PR {
+                err: cfg.usecase_err.clone(),
+            }),
+        );
+        let csv = CsvUseCase::new(
+            cx,
+            Arc::new(CR {
+                err: cfg.usecase_err.clone(),
+            }),
+        );
+        DocumentsServer::new(classify, pdf, text_doc, spreadsheet, presentation, csv)
+    }
+
+    // ---- Direct tool-method coverage ---------------------------------------
+
+    #[tokio::test]
+    async fn all_info_tools_succeed() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Doc,
+            ..Default::default()
+        });
+        assert!(
+            !s.doc_info(Parameters(TextInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Rtf,
+            ..Default::default()
+        });
+        assert!(
+            !s.rtf_info(Parameters(TextInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Xls,
+            ..Default::default()
+        });
+        assert!(
+            !s.xls_info(Parameters(SpreadsheetInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Ppt,
+            ..Default::default()
+        });
+        assert!(
+            !s.ppt_info(Parameters(PresentationInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn all_extract_tools_succeed() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Doc,
+            ..Default::default()
+        });
+        assert!(
+            !s.doc_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                word_from: Some(0),
+                word_to: Some(1),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Rtf,
+            ..Default::default()
+        });
+        assert!(
+            !s.rtf_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                word_from: None,
+                word_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Xls,
+            ..Default::default()
+        });
+        assert!(
+            !s.xls_extract_markdown(Parameters(SpreadsheetExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                sheet: Some("S1".into()),
+                row_from: Some(0),
+                row_to: Some(2),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+        let s = svc(Cfg {
+            kind: DocumentKind::Ppt,
+            ..Default::default()
+        });
+        assert!(
+            !s.ppt_extract_markdown(Parameters(PresentationExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                slide_from: Some(0),
+                slide_to: Some(1),
+            }))
+            .await
+            .unwrap()
+            .is_error
+            .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn csv_info_success_returns_header_json() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Csv,
+            ..Default::default()
+        });
+        let res = s
+            .csv_info(Parameters(CsvInfoParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert!(!res.is_error.unwrap());
+        let text = res.content[0].as_text().unwrap().text.clone();
+        assert!(text.contains("\"row_count\": 1"));
+        assert!(text.contains("\"header\""));
+        assert!(text.contains("a"));
+    }
+
+    #[tokio::test]
+    async fn csv_extract_markdown_with_range() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Csv,
+            ..Default::default()
+        });
+        let res = s
+            .csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+                row_from: Some(1),
+                row_to: Some(5),
+            }))
+            .await
+            .unwrap();
+        assert!(!res.is_error.unwrap());
+    }
+
+    #[tokio::test]
+    async fn classify_document_with_ocr_pages() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            ocr_pages: vec![0, 1],
+            ..Default::default()
+        });
+        let res = s
+            .classify_document(Parameters(ClassifyParams {
+                path: "x.pdf".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert!(!res.is_error.unwrap());
+        let text = res.content[0].as_text().unwrap().text.clone();
+        assert!(text.contains("page_index"));
+        assert!(text.contains("needs_ocr"));
+        assert!(text.contains("confidence"));
+        assert!(text.contains("pdf_type"));
+    }
+
+    #[tokio::test]
+    async fn pdf_info_with_ocr_pages() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            ocr_pages: vec![0],
+            ..Default::default()
+        });
+        let res = s
+            .pdf_info(Parameters(PdfInfoParams {
+                path: "x.pdf".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert!(!res.is_error.unwrap());
+        let text = res.content[0].as_text().unwrap().text.clone();
+        assert!(text.contains("\"page_count\": 2"));
+        assert!(text.contains("page_index"));
+    }
+
+    #[tokio::test]
+    async fn pdf_extract_markdown_ocres_mixed_pdf() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            ocr_pages: vec![1],
+            ..Default::default()
+        });
+        let res = s
+            .pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x.pdf".into(),
+                bytes: b64(b"x"),
+                page_from: Some(0),
+                page_to: Some(2),
+            }))
+            .await
+            .unwrap();
+        assert!(!res.is_error.unwrap());
+        let text = res.content[0].as_text().unwrap().text.clone();
+        // page 0 local ("t0"), page 1 OCR ("ocr-1").
+        assert!(text.contains("t0"));
+        assert!(text.contains("ocr-1"));
+    }
+
+    // ---- Error branches ----------------------------------------------------
+
+    #[tokio::test]
+    async fn all_tools_report_invalid_bytes_as_tool_error() {
+        // source_from_params failure branch for each tool that takes bytes.
+        let s = svc(Cfg::default());
+        for res in [
+            s.classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+                page_from: None,
+                page_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.doc_info(Parameters(TextInfoParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.docx_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+                word_from: None,
+                word_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.xls_info(Parameters(SpreadsheetInfoParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.xlsx_extract_markdown(Parameters(SpreadsheetExtractParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+                sheet: None,
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.ppt_info(Parameters(PresentationInfoParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+            }))
+            .await
+            .unwrap(),
+            s.pptx_extract_markdown(Parameters(PresentationExtractParams {
+                path: "x".into(),
+                bytes: Some(BAD.into()),
+                slide_from: None,
+                slide_to: None,
+            }))
+            .await
+            .unwrap(),
+        ] {
+            assert_eq!(res.is_error, Some(true));
+        }
+    }
+
+    #[tokio::test]
+    async fn all_tools_report_usecase_error() {
+        let err = ExtractionError::Malformed("boom".into());
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            classify_err: Some(err.clone()),
+            ..Default::default()
+        });
+        // classify_document use-case error branch.
+        let res = s
+            .classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+
+        // Cross-kind rejections drive the per-tool use-case error branch.
+        // Non-csv kinds reject the per-format tools; a non-csv kind is also
+        // needed to make csv_extract_markdown fail (csv rejects non-csv).
+        let s = svc(Cfg {
+            kind: DocumentKind::Csv,
+            ..Default::default()
+        });
+        for res in [
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap(),
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                page_from: None,
+                page_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.doc_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                word_from: None,
+                word_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.xlsx_extract_markdown(Parameters(SpreadsheetExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                sheet: None,
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap(),
+            s.pptx_extract_markdown(Parameters(PresentationExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                slide_from: None,
+                slide_to: None,
+            }))
+            .await
+            .unwrap(),
+        ] {
+            assert_eq!(res.is_error, Some(true));
+        }
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            ..Default::default()
+        });
+        let res = s
+            .csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn reader_error_branches() {
+        let err = ExtractionError::Io("read failed".into());
+        let s = svc(Cfg {
+            kind: DocumentKind::Docx,
+            usecase_err: Some(err),
+            ..Default::default()
+        });
+        // text_info error branch (use-case reader failure).
+        let res = s
+            .docx_info(Parameters(TextInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Xlsx,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        let res = s
+            .xlsx_info(Parameters(SpreadsheetInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Pptx,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        let res = s
+            .pptx_info(Parameters(PresentationInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Csv,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        let res = s
+            .csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn extract_reader_error_branches() {
+        let err = ExtractionError::Io("x".into());
+        let s = svc(Cfg {
+            kind: DocumentKind::Docx,
+            usecase_err: Some(err),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.docx_extract_markdown(Parameters(TextExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                word_from: None,
+                word_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Xlsx,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.xlsx_extract_markdown(Parameters(SpreadsheetExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                sheet: None,
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Pptx,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.pptx_extract_markdown(Parameters(PresentationExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                slide_from: None,
+                slide_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Csv,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x.csv".into(),
+                bytes: b64(b"x"),
+                row_from: None,
+                row_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn pdf_reader_error_branches() {
+        // pdf_info reader failure.
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            info_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        // extract_pages failure after a successful info.
+        let s = svc(Cfg {
+            kind: DocumentKind::Pdf,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert_eq!(
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                page_from: None,
+                page_to: None,
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn classify_extract_text_fallback_and_error() {
+        let s = svc(Cfg {
+            kind: DocumentKind::Docx,
+            ..Default::default()
+        });
+        let r = s.classify.extract_text(&Source::Bytes(vec![1])).unwrap();
+        assert_eq!(r.markdown, "fallback");
+
+        let s = svc(Cfg {
+            kind: DocumentKind::Docx,
+            usecase_err: Some(ExtractionError::Io("x".into())),
+            ..Default::default()
+        });
+        assert!(s.classify.extract_text(&Source::Bytes(vec![1])).is_err());
     }
 }

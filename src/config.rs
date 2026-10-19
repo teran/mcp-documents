@@ -266,4 +266,17 @@ mod tests {
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         remove_var("OCR_MAX_PAGES");
     }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn default_root_falls_back_to_root_without_home() {
+        let _g = lock();
+        let home = std::env::var_os("HOME");
+        remove_var("ALLOW_ROOT_DIR");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(allowroot(), PathBuf::from("/"));
+        if let Some(h) = home {
+            unsafe { std::env::set_var("HOME", h) };
+        }
+    }
 }

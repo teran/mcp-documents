@@ -206,4 +206,17 @@ mod tests {
             ExtractionError::Malformed(_)
         ));
     }
+
+    #[test]
+    fn maps_zip_unsupported_archive_and_catch_all() {
+        assert!(matches!(
+            map_zip_error(zip::result::ZipError::UnsupportedArchive("x")),
+            ExtractionError::Malformed(_)
+        ));
+        // Any other zip error falls through to the Malformed catch-all.
+        assert!(matches!(
+            map_zip_error(zip::result::ZipError::CompressionMethodNotSupported(0)),
+            ExtractionError::Malformed(_)
+        ));
+    }
 }

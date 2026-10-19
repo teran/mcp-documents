@@ -166,6 +166,21 @@ mod tests {
     }
 
     #[test]
+    fn read_path_no_follow_over_limit_is_resource_limit() {
+        let _g = lock();
+        unsafe { std::env::set_var("MAX_INPUT_BYTES", "10") };
+        let dir = std::env::temp_dir().join(format!("mcp-readbig-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("big.bin");
+        std::fs::write(&p, vec![0u8; 100]).unwrap();
+
+        let err = read_path_no_follow(&p).unwrap_err();
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
+        unsafe { std::env::remove_var("MAX_INPUT_BYTES") };
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn read_source_bytes_both_variants() {
         let bytes = read_source_bytes(&Source::Bytes(vec![1, 2, 3])).unwrap();
         assert_eq!(bytes, vec![1, 2, 3]);

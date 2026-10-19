@@ -152,6 +152,14 @@ mod tests {
     }
 
     #[test]
+    fn pdf_type_as_str_covers_all_variants() {
+        assert_eq!(PdfType::TextBased.as_str(), "TextBased");
+        assert_eq!(PdfType::Scanned.as_str(), "Scanned");
+        assert_eq!(PdfType::ImageBased.as_str(), "ImageBased");
+        assert_eq!(PdfType::Mixed.as_str(), "Mixed");
+    }
+
+    #[test]
     fn page_classification_new() {
         let pc = PageClassification::new(2, true, 0.95);
         assert_eq!(pc.page_index, 2);

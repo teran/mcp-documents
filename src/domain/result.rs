@@ -280,4 +280,17 @@ mod tests {
         assert!(b.path().is_none());
         assert_eq!(b.label(), "<3 bytes>");
     }
+
+    #[test]
+    fn source_read_bytes() {
+        let b = Source::Bytes(vec![1, 2, 3]);
+        assert_eq!(b.read_bytes().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn source_read_bytes_missing_path_is_io_error() {
+        let s = Source::Path(PathBuf::from("/definitely/missing/does-not-exist.bin"));
+        let err = s.read_bytes().unwrap_err();
+        assert!(matches!(err, ExtractionError::Io(_)));
+    }
 }

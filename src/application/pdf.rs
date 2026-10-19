@@ -428,4 +428,15 @@ mod tests {
         ];
         assert_eq!(pages_in_range(&pc, 0..3), vec![1, 2]);
     }
+
+    #[tokio::test]
+    async fn empty_range_returns_empty_result() {
+        let u = uc(info_with(&[0, 1, 2, 3]), DocumentKind::Pdf);
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), Some(0..0))
+            .await
+            .unwrap();
+        assert!(out.markdown.is_empty());
+        assert!(out.pages.is_empty());
+    }
 }

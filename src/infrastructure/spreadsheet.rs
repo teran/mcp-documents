@@ -249,4 +249,86 @@ mod tests {
         assert_eq!(info.sheets[0].rows, None);
         assert_eq!(info.sheets[0].cols, None);
     }
+
+    #[test]
+    fn spreadsheet_info_on_garbage_is_mapped_error() {
+        let r = CalamineSpreadsheetReader::new();
+        let err = r
+            .spreadsheet_info(&Source::Bytes(b"definitely not a workbook".to_vec()))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ExtractionError::Malformed(_) | ExtractionError::Io(_)
+        ));
+    }
+
+    #[test]
+    fn extract_sheet_by_name_success() {
+        let r = CalamineSpreadsheetReader::new();
+        let md = r
+            .extract_sheet(
+                &Source::Bytes(make_xlsx(&[Some("Sheet1")])),
+                Some("Sheet1"),
+                None,
+            )
+            .unwrap();
+        assert!(md.contains("Hello"));
+    }
+
+    #[test]
+    fn extract_sheet_renders_multiple_data_rows() {
+        // Build a workbook whose sheet has a header plus two data rows so the
+        // row-push path (rows r > 0) is exercised.
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("[Content_Types].xml", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+</Types>"#,
+        )
+        .unwrap();
+        zip.start_file("_rels/.rels", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"#,
+        )
+        .unwrap();
+        zip.start_file("xl/workbook.xml", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        )
+        .unwrap();
+        zip.start_file("xl/_rels/workbook.xml.rels", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>"#,
+        )
+        .unwrap();
+        zip.start_file("xl/worksheets/sheet1.xml", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Hdr</t></is></c></row>
+<row r="2"><c r="A2" t="inlineStr"><is><t>Data1</t></is></c></row>
+<row r="3"><c r="A3" t="inlineStr"><is><t>Data2</t></is></c></row>
+</sheetData></worksheet>"#,
+        )
+        .unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+
+        let r = CalamineSpreadsheetReader::new();
+        let md = r.extract_sheet(&Source::Bytes(bytes), None, None).unwrap();
+        assert!(md.contains("Data1"));
+        assert!(md.contains("Data2"));
+    }
 }
