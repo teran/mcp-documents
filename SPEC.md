@@ -458,6 +458,17 @@ The surface is **per-format**: one generic classifier plus, for each supported f
 
 Ranges are 0-based, inclusive-from / exclusive-to, resolved and clamped by `domain::ranges::resolve_range`; `from > to` is a `Malformed` request. Params structs derive `serde::Deserialize` + `schemars::JsonSchema`. The removed tools (`classify_pdf`, `extract_pdf`, `extract_pdf_text`, `extract_document`) are **gone** — use `classify_document` + the matching `<format>_info` / `<format>_extract_markdown` tool.
 
+#### Annotations and per-tool guidance (M04)
+
+Every tool is **read-only**: it only reads/parses a document at the given `path`/`bytes` and never modifies its environment. Consequently each tool is declared with explicit per-tool **Annotations** (via the `rmcp` `#[tool(annotations(...))]` attribute) so clients can trust them without guessing:
+
+- `readOnlyHint: true` — the tool never modifies its environment.
+- `destructiveHint: false` — no destructive/write behavior (meaningful only when `readOnlyHint` is false).
+- `idempotentHint: true` — repeating a call with the same arguments has no additional effect.
+- `openWorldHint: false` — the tool's domain of interaction is closed (only the files/bytes passed in).
+
+Each tool also carries a human-readable `title` and an extended per-tool `description` that doubles as its **per-tool guidance**: which format it handles, the `path` (within `ALLOW_ROOT_DIR`) vs base64 `bytes` input source, any applicable range params, Markdown-only output, and the read-only/safety caveat. The MCP spec has **no per-tool `instructions` field** — `instructions` is server-level only (carried by the `#[tool_handler(...)]`). Per-tool model guidance is therefore delivered through `description` (plus `title`/`annotations.title`), which the model sees as the authoritative usage note for each tool.
+
 ### 8.3 Error handling strategy
 
 Two distinct channels per the `rmcp` model:
