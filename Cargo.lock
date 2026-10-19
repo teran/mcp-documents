@@ -969,6 +969,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fearless_simd"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0f5f895dac0865bc235f1364793899569a7db538137f1024dccea56bf41c78d"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2071,9 +2077,9 @@ checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pdf-font"
-version = "1.0.0-beta.5"
+version = "1.0.0-beta.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b163a2f13938690663581964304ec6b8421a10cf529f4514bcbb67566d428b"
+checksum = "f75daa5dc448b936db410d4033d4da6118175bb71d30189c3048d2a38633d2e6"
 dependencies = [
  "brotli",
  "log",
@@ -2101,9 +2107,9 @@ dependencies = [
 
 [[package]]
 name = "pdf-interpret"
-version = "0.5.8"
+version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceedfaec44dcacc387456cd5f7999c516f8b502af208e98449ac1da5547f5f90"
+checksum = "ff732588294234f641c48fe4ad0c7c82721c6bf159431bfd6852288340544054"
 dependencies = [
  "bitflags 2.13.1",
  "kurbo",
@@ -2122,9 +2128,9 @@ dependencies = [
 
 [[package]]
 name = "pdf-render"
-version = "1.0.0-beta.18"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "216ef4876a97ae1194615964db9a1d16452c5c31dcb0264ad3c5e94cb87b2896"
+checksum = "a0dc5296f7b636aaf5e37bc07766e736be5284c2b78f583939ab32a05a9500ee"
 dependencies = [
  "bytemuck",
  "fast_image_resize",
@@ -2136,9 +2142,9 @@ dependencies = [
 
 [[package]]
 name = "pdf-syntax"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f20bfeec0f40f42811aee58b4c903be012400e00a73ec3d5d547488283f42a5"
+checksum = "fd95e71dc0267b79e7a0bc3c04c3085bd14d4ea7a3d3b0773c15a1f2de6039f8"
 dependencies = [
  "flate2",
  "log",
@@ -2152,26 +2158,26 @@ dependencies = [
 
 [[package]]
 name = "pdfluent-ccitt"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "307aa269500e87bfc6c5ca4fb011a88e5675c87c5139a9aa9d850dd038fdb985"
+checksum = "fb3de3b72a77b44f9cc9afdbfe6e7fe63d02cc7965e7828a6803bf732f2745fa"
 
 [[package]]
 name = "pdfluent-jbig2"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bf15bfa7202f54a5b3970bb65fa8cdbeef900811fbf97addc71738b8f650ab9"
+checksum = "b28a49ee0c9fd4b2379499b332e676bf420cefd7249ca9e8865173cab54e9795"
 dependencies = [
  "pdfluent-ccitt",
 ]
 
 [[package]]
 name = "pdfluent-jpeg2000"
-version = "0.3.5"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbbd9515282b1ecce7f53345d3805ed4a54e5f4ff479032f23f9514ca3412a69"
+checksum = "4128ae20fd44729d8cf68fe82ff614ea0758e2955e66c49e6c18eb5e3f519b78"
 dependencies = [
- "fearless_simd",
+ "fearless_simd 0.6.0",
  "image",
  "moxcms 0.7.11",
 ]
@@ -3574,7 +3580,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bd1a4c633ce09e7d713df1a6e036644a125e15e0c169cfb5180ddf5836ca04b"
 dependencies = [
  "bytemuck",
- "fearless_simd",
+ "fearless_simd 0.3.0",
  "hashbrown 0.16.1",
  "log",
  "peniko",
