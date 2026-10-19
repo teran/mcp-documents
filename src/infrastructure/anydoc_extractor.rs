@@ -298,4 +298,25 @@ mod tests {
         assert_eq!(c.kind, DocumentKind::Csv);
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn classify_garbage_pdf_is_mapped_error() {
+        // Bytes that sniff as a PDF (so we enter classify_pdf) but that
+        // pdf-inspector cannot parse -> the mapped inspector error branch.
+        let e = AnyDocExtractor::new();
+        let pdf = b"%PDF-1.4 this is not a real pdf structure ............".to_vec();
+        let err = e.classify(&Source::Bytes(pdf)).unwrap_err();
+        assert!(matches!(
+            err,
+            ExtractionError::Malformed(_)
+                | ExtractionError::Unsupported(_)
+                | ExtractionError::Encrypted
+                | ExtractionError::Io(_)
+        ));
+    }
+
+    #[test]
+    fn make_extractor_constructs() {
+        let _ = make_extractor();
+    }
 }

@@ -158,4 +158,16 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(res.is_ok());
     }
+
+    #[test]
+    fn validate_cli_path_valid_classify_path_ok() {
+        let dir = std::env::temp_dir().join(format!("mcp-main-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.txt");
+        std::fs::write(&p, b"hi").unwrap();
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
+        assert!(validate_cli_path(&CliCommand::Classify(p.clone())).is_ok());
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
