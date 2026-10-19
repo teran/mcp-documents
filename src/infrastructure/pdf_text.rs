@@ -129,4 +129,19 @@ mod tests {
         let r = a.extract_pages(&Source::Bytes(vec![1, 2, 3]), &[]).unwrap();
         assert!(r.is_empty());
     }
+
+    #[test]
+    fn pdf_info_on_garbage_is_domain_error() {
+        let a = PdfTextSourceAdapter::new();
+        // Bytes that sniff as a PDF but that pdf-inspector cannot parse.
+        let pdf = b"%PDF-1.4 this is not a real pdf structure ............".to_vec();
+        let err = a.pdf_info(&Source::Bytes(pdf)).unwrap_err();
+        assert!(matches!(
+            err,
+            ExtractionError::Malformed(_)
+                | ExtractionError::Unsupported(_)
+                | ExtractionError::Encrypted
+                | ExtractionError::Io(_)
+        ));
+    }
 }

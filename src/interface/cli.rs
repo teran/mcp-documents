@@ -596,6 +596,53 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_cli_classify_prints_ocr_pages() {
+        use crate::domain::document::PageClassification;
+
+        #[derive(Clone)]
+        struct PdfWithOcr;
+        impl DocumentExtractor for PdfWithOcr {
+            fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+                Ok(Classification {
+                    kind: DocumentKind::Pdf,
+                    pdf_type: Some(PdfType::Scanned),
+                    pages_needing_ocr: vec![
+                        PageClassification::new(0, true, 0.99),
+                        PageClassification::new(2, true, 0.5),
+                    ],
+                })
+            }
+            fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+                Ok(ExtractionResult::markdown_only(
+                    DocumentKind::Pdf,
+                    None,
+                    "".into(),
+                ))
+            }
+        }
+
+        let ext = Arc::new(PdfWithOcr);
+        let classify = ClassifyDocumentUseCase::new(ext.clone());
+        let pdf = PdfUseCase::new(
+            ext.clone(),
+            Arc::new(FakePdfText),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+        );
+        let td = TextDocUseCase::new(ext.clone(), Arc::new(FakeTextReader));
+        let ss = SpreadsheetUseCase::new(ext.clone(), Arc::new(FakeSheetReader));
+        let pr = PresentationUseCase::new(ext.clone(), Arc::new(FakePresReader));
+        let cv = CsvUseCase::new(ext, Arc::new(FakeCsvReader));
+
+        let cmd = CliCommand::Classify(PathBuf::from("a.pdf"));
+        assert!(
+            run_cli(&cmd, &classify, &pdf, &td, &ss, &pr, &cv)
+                .await
+                .is_ok()
+        );
+    }
+
     #[test]
     fn fake_ports_error_and_info_methods_are_exercised() {
         // Exercise the otherwise-unused fake port method bodies so the error /

@@ -90,6 +90,27 @@ jobs:
       - name: cargo llvm-cov --fail-under-lines 95
         run: cargo llvm-cov --fail-under-lines 95
 
+  mutation:
+    # Mutation testing as a HARD gate (criterion C02/N15). Runs cargo-mutants on
+    # the DEFAULT (pure-Rust) build only — never ocr-native (that needs a C++
+    # toolchain + CMake + rus.traineddata, and is exercised by the ocr-native
+    # job). tests/ocr_native.rs is `#[cfg(feature="ocr-native")]`-gated and so
+    # compiles out of the default build; it is not run here.
+    #
+    # `make mutation` installs a pinned cargo-mutants, runs it, and fails if the
+    # mutation score is below the configured threshold (or the run is broken).
+    # This job deliberately has continue-on-error: false — it must block merges
+    # on mutation regressions, so it is NOT allowed to pass silently.
+    name: mutation (cargo-mutants, default build)
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: make mutation (hard gate)
+        run: make mutation
+
   ocr-native:
     # The full OCR build. Compiles vendored Tesseract + Leptonica (needs a C++
     # toolchain + CMake) and embeds eng+rus tessdata. The crate only
