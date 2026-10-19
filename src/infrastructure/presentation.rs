@@ -82,9 +82,15 @@ impl AnyDocPresentationReader {
     fn pptx_slide_count(bytes: &[u8]) -> Result<usize, ExtractionError> {
         let result = std::panic::catch_unwind(|| {
             let archive = zip::ZipArchive::new(Cursor::new(bytes.to_vec()))?;
+            // In zip >= 9 `file_names()` yields `Result<Cow<str>, ZipError>`
+            // items (invalid UTF-8 names surface as errors); skip those.
             let count = archive
                 .file_names()
-                .filter(|n| n.starts_with(SLIDE_PREFIX) && n.ends_with(SLIDE_SUFFIX))
+                .filter(|n| {
+                    n.as_deref()
+                        .map(|n| n.starts_with(SLIDE_PREFIX) && n.ends_with(SLIDE_SUFFIX))
+                        .unwrap_or(false)
+                })
                 .count();
             Ok::<usize, zip::result::ZipError>(count)
         });
