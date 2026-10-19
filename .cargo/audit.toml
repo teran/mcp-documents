@@ -1,0 +1,18 @@
+# cargo-audit configuration (read automatically by the CI `audit` job from
+# `.cargo/audit.toml`; cargo-audit 0.22 discovers `./.cargo/audit.toml` first,
+# then `~/.cargo/audit.toml` — it does NOT read a repo-root `audit.toml`).
+#
+# TARGETED ignores for the zip 8.6.0 residual (RUSTSEC-2026-0367/0368/0369) —
+# deliberately NOT a blanket `ignore = "RUSTSEC-*"`. See the equivalent comment
+# in deny.toml: our own direct `zip` dep and `calamine` are on zip 9.0.5, but
+# `anydoc` (runtime) and `tesseract-rs` (build) still pin zip ^8.6.0 with no
+# zip-9 upstream release as of 2026-10. Fixed-don't-suppress: we fixed
+# everything that had a safe upgrade; this residual is tracked and must be
+# re-checked when anydoc/tesseract-rs move to zip >= 9 (or are forked).
+
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+]

@@ -70,4 +70,24 @@ yanked = "deny"
 ignore = [
   "RUSTSEC-2026-0192",
   "RUSTSEC-2024-0436",
+  # zip 8.6.0 — see the comment below; tracked residual awaiting an upstream fix.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
 ]
+
+# zip 8.6.0 (RUSTSEC-2026-0367/0368/0369) — TARGETED ignore, not a blanket
+# exclude. Fixed-don't-suppress: we bump everything we CAN to a patched version.
+# Our own direct `zip` dependency and `calamine` are already on zip 9.0.5 (the
+# fixed version), and `rustls`/`quinn-proto`/`chacha20` were patched too. The
+# residual zip 8.6.0 is pulled in ONLY by `anydoc` (runtime, `zip ^8.6.0`) and
+# `tesseract-rs` (build-time tessdata/source download, `zip ^8.6.0`), both of
+# which still pin zip < 9 with no zip-9 release as of 2026-10 — so there is no
+# safe upgrade path short of an upstream release or a vendored fork.
+# The vulnerable `ZipArchive::extract()` / `ZipStreamReader::extract()` APIs
+# (SUID/symlink escape) are NOT called by our own PPTX code — it only reads
+# archive members via `by_name`/`by_index` into memory with a decompression cap.
+# HOWEVER, `anydoc` DOES unpack untrusted documents at runtime, so this residual
+# is tracked and must be re-checked as soon as anydoc/tesseract-rs move to
+# zip >= 9 (or are forked). It is ignored here narrowly (these three concrete
+# RUSTSEC IDs with a reason), NOT as a blanket `ignore = "RUSTSEC-*"`.
