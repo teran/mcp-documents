@@ -199,6 +199,8 @@ The tool surface is **per-format**: one generic classifier plus, for each suppor
 
 **Common parameters:** every tool accepts a file **`path`** and optionally base64 **`bytes`** (used when the client passes the file content to the model; takes precedence over `path`). The `*_info` and `classify_document` tools return JSON; the `*_extract_markdown` tools return **Markdown only** — there are no plain-text tools. See [`SPEC.md`](./SPEC.md) §8.2 for details.
 
+**Annotations:** every tool is **read-only** (it only reads/parses the given document and never modifies its environment) and is declared with explicit per-tool Annotations (`readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`) plus a human-readable `title` and per-tool usage guidance in its description. See [`SPEC.md`](./SPEC.md) §8.2 (M04).
+
 ### Using documents with MCP clients (e.g. opencode)
 
 Text-only models cannot read PDF/binary attachments — opencode attaches the file on drag-and-drop / `[PDF]` reference, and the model rejects it (`this model does not support pdf input`). This is a **client-side** limitation (opencode issues #17205 / #42544; the fix is expected after v1.18.18). The reliable pattern is:

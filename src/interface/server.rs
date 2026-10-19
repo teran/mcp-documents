@@ -69,7 +69,14 @@ impl DocumentsServer {
     /// also returns the PDF type (TextBased/Scanned/ImageBased/Mixed) and the
     /// pages needing OCR.
     #[tool(
-        description = "Classify any supported document, returning its kind and (for PDFs) the PDF type and pages needing OCR"
+        description = "Classify any supported document, returning its kind and (for PDFs) the PDF type and pages needing OCR. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; the tool never modifies its environment.",
+        annotations(
+            title = "Classify document",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn classify_document(
         &self,
@@ -102,7 +109,16 @@ impl DocumentsServer {
 
     /// PDF metadata: page count, PDF type (TextBased/Scanned/ImageBased/Mixed)
     /// and which pages need OCR.
-    #[tool(description = "PDF metadata: page count, PDF type, and pages needing OCR")]
+    #[tool(
+        description = "PDF metadata: page count, PDF type, and pages needing OCR. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "PDF metadata",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn pdf_info(
         &self,
         Parameters(params): Parameters<PdfInfoParams>,
@@ -131,7 +147,14 @@ impl DocumentsServer {
     /// Extract a PDF as Markdown. Scanned pages are OCR'd; the optional
     /// `page_from`/`page_to` (0-based, end-exclusive) selects a page range.
     #[tool(
-        description = "Extract a PDF to Markdown (OCR for scanned pages); optional 0-based page_from/page_to range"
+        description = "Extract a PDF to Markdown (OCR for scanned pages); optional 0-based page_from/page_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract PDF as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn pdf_extract_markdown(
         &self,
@@ -153,7 +176,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// Word count and character count for a legacy binary `.doc`.
-    #[tool(description = "Word and character counts for a .doc document")]
+    #[tool(
+        description = "Word and character counts for a .doc document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".doc word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn doc_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -164,7 +196,14 @@ impl DocumentsServer {
     /// Extract a `.doc` as Markdown; optional `word_from`/`word_to` (0-based,
     /// end-exclusive) selects a word range.
     #[tool(
-        description = "Extract a .doc to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract a .doc to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .doc as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn doc_extract_markdown(
         &self,
@@ -174,7 +213,16 @@ impl DocumentsServer {
     }
 
     /// Word count and character count for a `.docx`.
-    #[tool(description = "Word and character counts for a .docx document")]
+    #[tool(
+        description = "Word and character counts for a .docx document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".docx word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn docx_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -185,7 +233,14 @@ impl DocumentsServer {
     /// Extract a `.docx` as Markdown; optional `word_from`/`word_to` (0-based,
     /// end-exclusive) selects a word range.
     #[tool(
-        description = "Extract a .docx to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract a .docx to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .docx as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn docx_extract_markdown(
         &self,
@@ -195,7 +250,16 @@ impl DocumentsServer {
     }
 
     /// Word count and character count for an RTF document.
-    #[tool(description = "Word and character counts for an RTF document")]
+    #[tool(
+        description = "Word and character counts for an RTF document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "RTF word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn rtf_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -206,7 +270,14 @@ impl DocumentsServer {
     /// Extract an RTF document as Markdown; optional `word_from`/`word_to`
     /// (0-based, end-exclusive) selects a word range.
     #[tool(
-        description = "Extract an RTF document to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract an RTF document to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract RTF as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn rtf_extract_markdown(
         &self,
@@ -220,7 +291,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// List the sheets (with row/col counts) of a legacy binary `.xls`.
-    #[tool(description = "List the sheets of a .xls workbook")]
+    #[tool(
+        description = "List the sheets of a .xls workbook. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".xls sheet list",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn xls_info(
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
@@ -231,7 +311,14 @@ impl DocumentsServer {
     /// Extract a `.xls` sheet as a Markdown table; optional `sheet` name and
     /// `row_from`/`row_to` (0-based, end-exclusive) row range.
     #[tool(
-        description = "Extract a .xls sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range"
+        description = "Extract a .xls sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .xls sheet as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn xls_extract_markdown(
         &self,
@@ -241,7 +328,16 @@ impl DocumentsServer {
     }
 
     /// List the sheets (with row/col counts) of a `.xlsx` workbook.
-    #[tool(description = "List the sheets of a .xlsx workbook")]
+    #[tool(
+        description = "List the sheets of a .xlsx workbook. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".xlsx sheet list",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn xlsx_info(
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
@@ -252,7 +348,14 @@ impl DocumentsServer {
     /// Extract a `.xlsx` sheet as a Markdown table; optional `sheet` name and
     /// `row_from`/`row_to` (0-based, end-exclusive) row range.
     #[tool(
-        description = "Extract a .xlsx sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range"
+        description = "Extract a .xlsx sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .xlsx sheet as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn xlsx_extract_markdown(
         &self,
@@ -266,7 +369,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// Slide count for a legacy binary `.ppt` (whole-document unit; no range).
-    #[tool(description = "Slide count for a .ppt presentation (legacy; whole-document unit)")]
+    #[tool(
+        description = "Slide count for a .ppt presentation (legacy; whole-document unit). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".ppt slide count",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn ppt_info(
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
@@ -277,7 +389,14 @@ impl DocumentsServer {
     /// Extract a `.ppt` as Markdown (whole document; `slide_from`/`slide_to`
     /// are not supported for legacy binary `.ppt`).
     #[tool(
-        description = "Extract a .ppt to Markdown (whole document; no slide range for legacy binary .ppt)"
+        description = "Extract a .ppt to Markdown (whole document; no slide range for legacy binary .ppt). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .ppt as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn ppt_extract_markdown(
         &self,
@@ -287,7 +406,16 @@ impl DocumentsServer {
     }
 
     /// Slide count for a `.pptx` presentation.
-    #[tool(description = "Slide count for a .pptx presentation")]
+    #[tool(
+        description = "Slide count for a .pptx presentation. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".pptx slide count",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn pptx_info(
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
@@ -298,7 +426,14 @@ impl DocumentsServer {
     /// Extract a `.pptx` as Markdown; optional `slide_from`/`slide_to`
     /// (0-based, end-exclusive) selects a slide range.
     #[tool(
-        description = "Extract a .pptx to Markdown; optional 0-based slide_from/slide_to slide range"
+        description = "Extract a .pptx to Markdown; optional 0-based slide_from/slide_to slide range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .pptx as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn pptx_extract_markdown(
         &self,
@@ -313,7 +448,16 @@ impl DocumentsServer {
 
     /// CSV metadata in a single streaming pass: total rows, column count and
     /// header.
-    #[tool(description = "CSV metadata: total rows, column count, header (streaming)")]
+    #[tool(
+        description = "CSV metadata: total rows, column count, header (streaming). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "CSV metadata",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn csv_info(
         &self,
         Parameters(params): Parameters<CsvInfoParams>,
@@ -337,7 +481,14 @@ impl DocumentsServer {
     /// `row_from`/`row_to` (0-based over data rows, end-exclusive) selects a
     /// row range. The header row is always shown.
     #[tool(
-        description = "Extract a CSV as a Markdown table (streaming); optional 0-based row_from/row_to over data rows"
+        description = "Extract a CSV as a Markdown table (streaming); optional 0-based row_from/row_to over data rows. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract CSV as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn csv_extract_markdown(
         &self,
@@ -1140,5 +1291,73 @@ mod extra_tests {
             .is_error,
             Some(false)
         );
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    //! Verify M04: every tool carries per-tool Annotations (readOnlyHint,
+    //! destructiveHint, idempotentHint, openWorldHint) plus a title and a
+    //! per-tool description carrying usage guidance. The `#[tool(...)]` macro
+    //! generates a `<name>_tool_attr()` associated function returning the
+    //! `rmcp::model::Tool` metadata; we assert on those.
+
+    use rmcp::model::ToolAnnotations;
+
+    use super::DocumentsServer;
+
+    /// Expected annotations for every read-only extraction tool.
+    fn expect_read_only(a: &Option<ToolAnnotations>, tool: &str) {
+        let ann = a
+            .as_ref()
+            .unwrap_or_else(|| panic!("{tool}: missing annotations"));
+        assert_eq!(ann.read_only_hint, Some(true), "{tool}: readOnlyHint");
+        assert_eq!(ann.destructive_hint, Some(false), "{tool}: destructiveHint");
+        assert_eq!(ann.idempotent_hint, Some(true), "{tool}: idempotentHint");
+        assert_eq!(ann.open_world_hint, Some(false), "{tool}: openWorldHint");
+        assert!(
+            ann.title.as_deref().is_some_and(|t| !t.is_empty()),
+            "{tool}: annotations.title must be a non-empty human-readable title"
+        );
+    }
+
+    /// Expected: a non-empty `description` (the per-tool guidance channel).
+    fn expect_description(d: &Option<std::borrow::Cow<'static, str>>, tool: &str) {
+        assert!(
+            d.as_deref().is_some_and(|s| !s.is_empty()),
+            "{tool}: description must carry per-tool guidance"
+        );
+    }
+
+    #[test]
+    fn all_tools_carry_read_only_annotations() {
+        let tools = [
+            DocumentsServer::classify_document_tool_attr(),
+            DocumentsServer::pdf_info_tool_attr(),
+            DocumentsServer::pdf_extract_markdown_tool_attr(),
+            DocumentsServer::doc_info_tool_attr(),
+            DocumentsServer::doc_extract_markdown_tool_attr(),
+            DocumentsServer::docx_info_tool_attr(),
+            DocumentsServer::docx_extract_markdown_tool_attr(),
+            DocumentsServer::rtf_info_tool_attr(),
+            DocumentsServer::rtf_extract_markdown_tool_attr(),
+            DocumentsServer::xls_info_tool_attr(),
+            DocumentsServer::xls_extract_markdown_tool_attr(),
+            DocumentsServer::xlsx_info_tool_attr(),
+            DocumentsServer::xlsx_extract_markdown_tool_attr(),
+            DocumentsServer::ppt_info_tool_attr(),
+            DocumentsServer::ppt_extract_markdown_tool_attr(),
+            DocumentsServer::pptx_info_tool_attr(),
+            DocumentsServer::pptx_extract_markdown_tool_attr(),
+            DocumentsServer::csv_info_tool_attr(),
+            DocumentsServer::csv_extract_markdown_tool_attr(),
+        ];
+
+        assert_eq!(tools.len(), 19, "all 19 tools must be covered");
+        for tool in &tools {
+            let name = tool.name.to_string();
+            expect_read_only(&tool.annotations, &name);
+            expect_description(&tool.description, &name);
+        }
     }
 }
