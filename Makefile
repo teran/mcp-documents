@@ -36,12 +36,18 @@ TESSDATA_LANGS  := eng rus
 #   * MUTATION_MIN_SCORE— minimum mutation score (caught / viable mutants) below
 #     which the gate fails. This is a hard gate, not a suggestion.
 #   * MUTANTS_TIMEOUT   — per-mutant test timeout in seconds (guards against
-#     mutation-induced hangs / infinite loops).
+#     mutation-induced hangs / infinite loops; lowered to 60 so a hanging
+#     mutant costs 60s, not 300s, keeping the run inside the CI job timeout).
 #   * MUTANTS_JOBS      — test-worker parallelism, capped to 8 to bound CI load.
+#   * MUTANTS_FILES     — optional space-separated list of source paths passed
+#     to `cargo mutants --file <...>` to bound the mutation scope (empty = all
+#     files). Lets CI run a bounded, high-value subset so the whole job fits in
+#     the `mutation` job's `timeout-minutes`.
 MUTANTS_VERSION    := 27.1.0
 MUTATION_MIN_SCORE := 80
-MUTANTS_TIMEOUT    := 300
+MUTANTS_TIMEOUT    := 60
 MUTANTS_JOBS       := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+MUTANTS_FILES      :=
 
 .PHONY: build build-local prepare-tessdata test coverage fmt lint check-ocr check mutation
 
@@ -111,9 +117,11 @@ check: fmt lint test
 ## report), so it can serve as a hard gate in CI.
 mutation:
 	@set -e; \
+	set -f; \
 	MUTANTS_VERSION="$(MUTANTS_VERSION)"; \
 	MIN_SCORE="$(MUTATION_MIN_SCORE)"; \
 	JOBS="$(MUTANTS_JOBS)"; \
+	FILES="$(MUTANTS_FILES)"; \
 	if [ "$$JOBS" -gt 8 ]; then JOBS=8; fi; \
 	if command -v cargo-mutants >/dev/null 2>&1; then \
 		installed="$$(cargo mutants --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"; \
@@ -127,11 +135,19 @@ mutation:
 		echo "==> installing cargo-mutants $$MUTANTS_VERSION (pinned)"; \
 		cargo install cargo-mutants --version "$$MUTANTS_VERSION"; \
 	fi; \
-	echo "==> running cargo mutants on the default build (jobs=$$JOBS, timeout=$(MUTANTS_TIMEOUT)s)"; \
+	if [ -n "$$FILES" ]; then \
+		SCOPE_ARG=""; \
+		for f in $$FILES; do SCOPE_ARG="$$SCOPE_ARG --file $$f"; done; \
+		echo "==> running cargo mutants on bounded scope (jobs=$$JOBS, timeout=$(MUTANTS_TIMEOUT)s, files: $$FILES)"; \
+	else \
+		SCOPE_ARG=""; \
+		echo "==> running cargo mutants on ALL files (jobs=$$JOBS, timeout=$(MUTANTS_TIMEOUT)s)"; \
+	fi; \
 	rm -rf mutants.out; \
 	set +e; \
-	$(CARGO) mutants -j "$$JOBS" --timeout "$(MUTANTS_TIMEOUT)" -v; \
+	$(CARGO) mutants -j "$$JOBS" --timeout "$(MUTANTS_TIMEOUT)" -v $$SCOPE_ARG; \
 	MUTANTS_RC=$$?; \
+	set +f; \
 	set -e; \
 	echo "==> cargo-mutants exit code: $$MUTANTS_RC"; \
 	if [ "$$MUTANTS_RC" -ne 0 ] && [ "$$MUTANTS_RC" -ne 2 ] && [ "$$MUTANTS_RC" -ne 3 ]; then \
