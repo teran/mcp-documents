@@ -43,11 +43,17 @@ pub fn ocr_max_pages() -> usize {
 
 /// Read `OCR_CONCURRENCY`, defaulting to the number of CPU cores. Bounds the
 /// number of pages OCR'd in parallel per request (via a semaphore).
+///
+/// Always returns at least 1: a value of 0 (from env or the fallback) must
+/// never reach the OCR semaphore, where it would deadlock the pipeline.
 pub fn ocr_concurrency() -> usize {
     let from_env = env_usize("OCR_CONCURRENCY", 0);
     if from_env > 0 {
-        return from_env;
+        // Valid env override: clamp defensively so the early-return path can
+        // never yield 0 either.
+        return from_env.max(1);
     }
+    // 0/unset/invalid env: fall back to CPU count, never below 1.
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
@@ -265,6 +271,18 @@ mod tests {
         set_var("OCR_MAX_PAGES", "not-a-number");
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         remove_var("OCR_MAX_PAGES");
+    }
+
+    #[test]
+    fn ocr_concurrency_zero_env_still_returns_at_least_one() {
+        let _g = lock();
+        // A `0` (or unset) OCR_CONCURRENCY must never yield 0 — it would
+        // deadlock the OCR semaphore. Both the env-early-return and the
+        // CPU-count fallback paths must produce >= 1.
+        set_var("OCR_CONCURRENCY", "0");
+        assert!(ocr_concurrency() >= 1, "0 env must not produce 0");
+        remove_var("OCR_CONCURRENCY");
+        assert!(ocr_concurrency() >= 1, "unset env must not produce 0");
     }
 
     #[cfg(not(windows))]

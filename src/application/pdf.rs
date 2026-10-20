@@ -171,7 +171,11 @@ impl PdfUseCase {
         pdf_bytes: Arc<[u8]>,
         pages: &[usize],
     ) -> Result<Vec<ExtractedPage>, ExtractionError> {
-        let sem = Arc::new(tokio::sync::Semaphore::new(self.ocr_concurrency));
+        // Clamp to a minimum of 1 permit: a mutated/boundary `ocr_concurrency`
+        // of 0 would create a 0-permit semaphore, `acquire_owned()` would never
+        // resolve, and the OCR pipeline would deadlock until the per-mutant
+        // timeout. Guard here so OCR always makes forward progress.
+        let sem = Arc::new(tokio::sync::Semaphore::new(self.ocr_concurrency.max(1)));
         let mut set = tokio::task::JoinSet::new();
 
         for &idx in pages {
@@ -410,6 +414,32 @@ mod tests {
             Arc::new(FakeOcr),
             100,
             1,
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), None)
+            .await
+            .unwrap();
+        assert_eq!(out.pages.len(), 4);
+        assert_eq!(out.markdown, "ocr-0\n\nocr-1\n\nocr-2\n\nocr-3");
+    }
+
+    #[tokio::test]
+    async fn ocr_concurrency_of_zero_does_not_hang() {
+        // Regression guard: a mutated/boundary `ocr_concurrency` of 0 must NOT
+        // deadlock the pipeline (a 0-permit semaphore would make acquire_owned()
+        // never resolve). The semaphore is clamped to >= 1, so all 4 OCR pages
+        // complete normally.
+        let u = PdfUseCase::new_with_limits(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pdf,
+            }),
+            Arc::new(FakeTextSource {
+                info: info_with(&[0, 1, 2, 3]),
+            }),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+            100,
+            0,
         );
         let out = u
             .extract_markdown(&Source::Bytes(vec![9]), None)
