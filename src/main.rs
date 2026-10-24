@@ -98,7 +98,15 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
 
 /// Select the OCR provider when `ocr-native` is enabled. Fails fast at startup
 /// if the engine cannot be initialized.
+///
+/// `#[mutants::skip]`: this function compiles only when the `ocr-native` feature
+/// is enabled. The CI mutation gate runs on the default (non-`ocr-native`)
+/// build, where this function is not compiled, so a mutant replacing its whole
+/// body with `Ok(Arc::new(Default::default()))` cannot be killed by tests in
+/// that context. The non-native `build_ocr` remains covered by its own test
+/// below.
 #[cfg(feature = "ocr-native")]
+#[mutants::skip]
 fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send + Sync>> {
     mcp_documents::infrastructure::make_ocr().map_err(|e| {
         Box::<dyn std::error::Error + Send + Sync>::from(format!(
@@ -111,6 +119,7 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
 mod tests {
     use super::*;
     use mcp_documents::domain::result::PageBitmap;
+    use std::path::PathBuf;
 
     /// With OCR disabled (default build), the provider built at startup is a
     /// stub that reports OCR unavailable rather than panicking.
@@ -124,5 +133,31 @@ mod tests {
             err,
             mcp_documents::domain::error::ExtractionError::OcrUnavailable(_)
         ));
+    }
+
+    #[test]
+    fn validate_cli_path_serve_returns_ok() {
+        // `serve` never touches a path; the guard is a no-op.
+        assert!(validate_cli_path(&CliCommand::Serve).is_ok());
+    }
+
+    #[test]
+    fn validate_cli_path_missing_classify_path_errors() {
+        let err = validate_cli_path(&CliCommand::Classify(PathBuf::from(
+            "/definitely/missing/file.pdf",
+        )));
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn validate_cli_path_valid_classify_path_ok() {
+        let dir = std::env::temp_dir().join(format!("mcp-main-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.txt");
+        std::fs::write(&p, b"hi").unwrap();
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
+        assert!(validate_cli_path(&CliCommand::Classify(p.clone())).is_ok());
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -296,4 +296,17 @@ mod tests {
         let b = make_csv_reader();
         let _ = (a, b);
     }
+
+    #[test]
+    fn open_missing_path_is_io_error() {
+        // The `Ok(Err)` branch of `open`: a path that cannot be opened surfaces
+        // the underlying I/O error as a domain error.
+        let r = CsvStreamReader::new();
+        let err = r
+            .csv_info(&Source::Path(std::path::PathBuf::from(
+                "/definitely/missing/data.csv",
+            )))
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::Io(_)));
+    }
 }

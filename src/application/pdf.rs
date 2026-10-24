@@ -144,6 +144,16 @@ impl PdfUseCase {
         }
 
         // If the range is empty, produce an empty-but-valid result.
+        //
+        // `#[mutants::skip]`: the `&&` here is behaviorally equivalent to `||`
+        // (mutating it to `||` yields an un-killable "stubborn" mutant). `pages`
+        // is built exclusively from the pages in `range` (every index in `range`
+        // lands in `text_pages` or `ocr_pages`, both of which populate `pages`),
+        // so `pages.is_empty()` is always equal to `range.is_empty()` in every
+        // reachable state — even the two distinct empty-result paths
+        // (`from_pages` with no pages vs `markdown_only`) produce identical
+        // output. No behavioral test can therefore distinguish `&&` from `||`.
+        #[mutants::skip]
         if pages.is_empty() && range.is_empty() {
             return Ok(ExtractionResult::markdown_only(
                 DocumentKind::Pdf,
@@ -171,7 +181,11 @@ impl PdfUseCase {
         pdf_bytes: Arc<[u8]>,
         pages: &[usize],
     ) -> Result<Vec<ExtractedPage>, ExtractionError> {
-        let sem = Arc::new(tokio::sync::Semaphore::new(self.ocr_concurrency));
+        // Clamp to a minimum of 1 permit: a mutated/boundary `ocr_concurrency`
+        // of 0 would create a 0-permit semaphore, `acquire_owned()` would never
+        // resolve, and the OCR pipeline would deadlock until the per-mutant
+        // timeout. Guard here so OCR always makes forward progress.
+        let sem = Arc::new(tokio::sync::Semaphore::new(self.ocr_concurrency.max(1)));
         let mut set = tokio::task::JoinSet::new();
 
         for &idx in pages {
@@ -397,6 +411,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ocr_page_cap_at_exact_limit_succeeds() {
+        // All 4 pages need OCR and the cap is exactly 4. Under the strict
+        // `len > max` comparison equality is allowed, so the request succeeds; a
+        // `>` → `>=` mutant would reject the exact-fit request and this test
+        // would fail.
+        let u = PdfUseCase::new_with_limits(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pdf,
+            }),
+            Arc::new(FakeTextSource {
+                info: info_with(&[0, 1, 2, 3]),
+            }),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+            4,
+            2,
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), None)
+            .await
+            .unwrap();
+        assert_eq!(out.pages.len(), 4);
+    }
+
+    #[tokio::test]
     async fn ocr_concurrency_is_respected() {
         // 4 pages need OCR, concurrency limited to 1; should still work.
         let u = PdfUseCase::new_with_limits(
@@ -419,6 +458,32 @@ mod tests {
         assert_eq!(out.markdown, "ocr-0\n\nocr-1\n\nocr-2\n\nocr-3");
     }
 
+    #[tokio::test]
+    async fn ocr_concurrency_of_zero_does_not_hang() {
+        // Regression guard: a mutated/boundary `ocr_concurrency` of 0 must NOT
+        // deadlock the pipeline (a 0-permit semaphore would make acquire_owned()
+        // never resolve). The semaphore is clamped to >= 1, so all 4 OCR pages
+        // complete normally.
+        let u = PdfUseCase::new_with_limits(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pdf,
+            }),
+            Arc::new(FakeTextSource {
+                info: info_with(&[0, 1, 2, 3]),
+            }),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+            100,
+            0,
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), None)
+            .await
+            .unwrap();
+        assert_eq!(out.pages.len(), 4);
+        assert_eq!(out.markdown, "ocr-0\n\nocr-1\n\nocr-2\n\nocr-3");
+    }
+
     #[test]
     fn pages_in_range_filters_needing_ocr() {
         let pc = vec![
@@ -427,5 +492,16 @@ mod tests {
             PageClassification::new(2, true, 0.9),
         ];
         assert_eq!(pages_in_range(&pc, 0..3), vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn empty_range_returns_empty_result() {
+        let u = uc(info_with(&[0, 1, 2, 3]), DocumentKind::Pdf);
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), Some(0..0))
+            .await
+            .unwrap();
+        assert!(out.markdown.is_empty());
+        assert!(out.pages.is_empty());
     }
 }

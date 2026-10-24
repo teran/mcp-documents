@@ -259,4 +259,60 @@ mod tests {
         unsafe { std::env::remove_var("MAX_DECOMPRESSED_BYTES") };
         assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
+
+    #[test]
+    fn non_pptx_info_reports_one_slide() {
+        let r = AnyDocPresentationReader::new(None);
+        let info = r
+            .presentation_info(&Source::Bytes(vec![0xD0, 0xCF, 0x11, 0xE0, 1, 2]))
+            .unwrap();
+        assert_eq!(info.slide_count, 1);
+    }
+
+    #[test]
+    fn invalid_zip_count_is_mapped_error() {
+        let r = AnyDocPresentationReader::new(None);
+        // PK magic (so it is treated as PPTX) but not a valid zip archive.
+        let bytes = b"PK\x03\x04 not a real zip archive at all........".to_vec();
+        let err = r.presentation_info(&Source::Bytes(bytes)).unwrap_err();
+        assert!(matches!(
+            err,
+            ExtractionError::Malformed(_) | ExtractionError::MissingPart(_)
+        ));
+    }
+
+    #[test]
+    fn non_pptx_extract_uses_extractor_fallback() {
+        use crate::domain::document::{Classification, DocumentKind};
+        use crate::domain::ports::DocumentExtractor;
+        use crate::domain::result::ExtractionResult;
+
+        #[derive(Clone)]
+        struct FakeExtractor;
+        impl DocumentExtractor for FakeExtractor {
+            fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+                Ok(Classification {
+                    kind: DocumentKind::Ppt,
+                    pdf_type: None,
+                    pages_needing_ocr: Vec::new(),
+                })
+            }
+            fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+                Ok(ExtractionResult::markdown_only(
+                    DocumentKind::Ppt,
+                    None,
+                    "legacy slide text".into(),
+                ))
+            }
+        }
+
+        let r = AnyDocPresentationReader::new(Some(Arc::new(FakeExtractor)));
+        let md = r
+            .extract_presentation(
+                &Source::Bytes(vec![0xD0, 0xCF, 0x11, 0xE0, 1, 2]),
+                Some(0..1),
+            )
+            .unwrap();
+        assert!(md.contains("legacy slide text"));
+    }
 }
