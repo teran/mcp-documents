@@ -106,21 +106,31 @@ pub fn expand_tilde(input: &str) -> PathBuf {
     PathBuf::from(trimmed)
 }
 
+/// The default root on Windows: the system drive root (e.g. `C:\`), reading
+/// `SystemDrive` from the environment.
+///
+/// `#[mutants::skip]`: this function compiles only when the target is Windows
+/// (it reads `SystemDrive`). The CI mutation gate runs on a non-Windows
+/// (default) build, where this code is not compiled, so the mutants over
+/// `!d.is_empty()` (removing the `!`, or forcing the guard to `false`/`true`)
+/// cannot be killed by tests on that platform. Skipping the whole function —
+/// rather than only the `let d = match ...` binding as before — prevents these
+/// match-guard mutants from surviving.
+#[cfg(windows)]
+#[mutants::skip]
+fn windows_default_root() -> PathBuf {
+    let d = match std::env::var("SystemDrive") {
+        Ok(d) if !d.is_empty() => format!("{d}\\"),
+        _ => "C:\\".into(),
+    };
+    PathBuf::from(d)
+}
+
 /// The default root(s) when `ALLOW_ROOT_DIR` is unset.
 fn default_roots() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
-        // System disk root, e.g. `C:\`.
-        // `#[mutants::skip]`: this branch compiles only on Windows (reading
-        // `SystemDrive` from the environment). The CI mutation gate runs on a
-        // non-Windows (default) build, where this code does not compile, so the
-        // mutants over `!d.is_empty()` cannot be killed by tests on this platform.
-        #[mutants::skip]
-        let d = match std::env::var("SystemDrive") {
-            Ok(d) if !d.is_empty() => format!("{d}\\"),
-            _ => "C:\\".into(),
-        };
-        vec![PathBuf::from(d)]
+        vec![windows_default_root()]
     }
     #[cfg(not(windows))]
     {
