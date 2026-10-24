@@ -210,6 +210,26 @@ mod tests {
     }
 
     #[test]
+    fn char_cap_at_exact_limit_succeeds() {
+        // "a b c" joins to a 5-char chunk. Under the strict `char_count > max`
+        // comparison equality is allowed, so the request succeeds; a `>` → `>=`
+        // mutant would reject the exact-fit chunk and this test would fail.
+        let u = TextDocUseCase::new_with_max_chars(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Docx,
+            }),
+            Arc::new(FakeReader {
+                text: "a b c".to_string(),
+            }),
+            5,
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![1]), DocumentKind::Docx, None)
+            .unwrap();
+        assert_eq!(out.markdown, "a b c");
+    }
+
+    #[test]
     #[allow(clippy::reversed_empty_ranges)]
     fn from_greater_than_to_is_malformed() {
         let u = uc(DocumentKind::Docx, "a b c");

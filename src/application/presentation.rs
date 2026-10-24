@@ -189,4 +189,25 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
+
+    #[test]
+    fn extract_markdown_char_cap_at_exact_limit_succeeds() {
+        // A body whose length is exactly the cap must succeed under the strict
+        // `>` comparison; a `>` → `>=` mutant would reject the exact-fit body.
+        let markdown = "slide text body";
+        let u = PresentationUseCase::new_with_max_chars(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pptx,
+            }),
+            Arc::new(FakeReader {
+                slides: 3,
+                markdown: markdown.to_string(),
+            }),
+            markdown.chars().count(),
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![1]), DocumentKind::Pptx, None)
+            .unwrap();
+        assert_eq!(out.markdown, markdown);
+    }
 }

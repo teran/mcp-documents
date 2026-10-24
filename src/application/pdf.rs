@@ -144,6 +144,16 @@ impl PdfUseCase {
         }
 
         // If the range is empty, produce an empty-but-valid result.
+        //
+        // `#[mutants::skip]`: the `&&` here is behaviorally equivalent to `||`
+        // (mutating it to `||` yields an un-killable "stubborn" mutant). `pages`
+        // is built exclusively from the pages in `range` (every index in `range`
+        // lands in `text_pages` or `ocr_pages`, both of which populate `pages`),
+        // so `pages.is_empty()` is always equal to `range.is_empty()` in every
+        // reachable state — even the two distinct empty-result paths
+        // (`from_pages` with no pages vs `markdown_only`) produce identical
+        // output. No behavioral test can therefore distinguish `&&` from `||`.
+        #[mutants::skip]
         if pages.is_empty() && range.is_empty() {
             return Ok(ExtractionResult::markdown_only(
                 DocumentKind::Pdf,
@@ -398,6 +408,31 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, ExtractionError::ResourceLimit(_)));
+    }
+
+    #[tokio::test]
+    async fn ocr_page_cap_at_exact_limit_succeeds() {
+        // All 4 pages need OCR and the cap is exactly 4. Under the strict
+        // `len > max` comparison equality is allowed, so the request succeeds; a
+        // `>` → `>=` mutant would reject the exact-fit request and this test
+        // would fail.
+        let u = PdfUseCase::new_with_limits(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pdf,
+            }),
+            Arc::new(FakeTextSource {
+                info: info_with(&[0, 1, 2, 3]),
+            }),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+            4,
+            2,
+        );
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), None)
+            .await
+            .unwrap();
+        assert_eq!(out.pages.len(), 4);
     }
 
     #[tokio::test]

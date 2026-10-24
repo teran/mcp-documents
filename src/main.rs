@@ -98,7 +98,15 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
 
 /// Select the OCR provider when `ocr-native` is enabled. Fails fast at startup
 /// if the engine cannot be initialized.
+///
+/// `#[mutants::skip]`: this function compiles only when the `ocr-native` feature
+/// is enabled. The CI mutation gate runs on the default (non-`ocr-native`)
+/// build, where this function is not compiled, so a mutant replacing its whole
+/// body with `Ok(Arc::new(Default::default()))` cannot be killed by tests in
+/// that context. The non-native `build_ocr` remains covered by its own test
+/// below.
 #[cfg(feature = "ocr-native")]
+#[mutants::skip]
 fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send + Sync>> {
     mcp_documents::infrastructure::make_ocr().map_err(|e| {
         Box::<dyn std::error::Error + Send + Sync>::from(format!(
