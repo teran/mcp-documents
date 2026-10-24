@@ -143,18 +143,11 @@ impl PdfUseCase {
             pages.append(&mut ocr_results);
         }
 
-        // If the range is empty, produce an empty-but-valid result.
-        //
-        // `#[mutants::skip]`: the `&&` here is behaviorally equivalent to `||`
-        // (mutating it to `||` yields an un-killable "stubborn" mutant). `pages`
-        // is built exclusively from the pages in `range` (every index in `range`
-        // lands in `text_pages` or `ocr_pages`, both of which populate `pages`),
-        // so `pages.is_empty()` is always equal to `range.is_empty()` in every
-        // reachable state — even the two distinct empty-result paths
-        // (`from_pages` with no pages vs `markdown_only`) produce identical
-        // output. No behavioral test can therefore distinguish `&&` from `||`.
-        #[mutants::skip]
-        if pages.is_empty() && range.is_empty() {
+        // If the range is empty, produce an empty-but-valid result. The
+        // condition is factored into a pure helper so that the `&&`/`||` here is
+        // distinguishable by tests (see `is_empty_result`); keeping it inline on
+        // the `if` would create a behaviorally-un-killable `&&` → `||` mutant.
+        if is_empty_result(pages.is_empty(), range.is_empty()) {
             return Ok(ExtractionResult::markdown_only(
                 DocumentKind::Pdf,
                 Some(info.pdf_type),
@@ -232,6 +225,15 @@ pub fn pages_in_range(needs_ocr: &[PageClassification], range: Range<usize>) -> 
     range
         .filter(|&i| needs_ocr.iter().any(|p| p.page_index == i && p.needs_ocr))
         .collect()
+}
+
+/// Whether an extraction produced an empty result because both the selected page
+/// set and the requested range are empty. Factored into a pure function so the
+/// `&&` is distinguishable from `||` under mutation testing: the parameters are
+/// independent, unlike the inline `if` where `pages.is_empty()` always equals
+/// `range.is_empty()` in every reachable state.
+fn is_empty_result(pages_empty: bool, range_empty: bool) -> bool {
+    pages_empty && range_empty
 }
 
 #[cfg(test)]
@@ -492,6 +494,18 @@ mod tests {
             PageClassification::new(2, true, 0.9),
         ];
         assert_eq!(pages_in_range(&pc, 0..3), vec![1, 2]);
+    }
+
+    #[test]
+    fn is_empty_result_distinguishes_and_from_or() {
+        // The `&&` in `is_empty_result` is distinguishable from `||` because the
+        // arguments are independent. Each of these kills the `&&` → `||` mutant:
+        // under `||`, `is_empty_result(true, false)` and `is_empty_result(false,
+        // true)` would both return `true`, failing the asserts below.
+        assert!(is_empty_result(true, true));
+        assert!(!is_empty_result(true, false));
+        assert!(!is_empty_result(false, true));
+        assert!(!is_empty_result(false, false));
     }
 
     #[tokio::test]
