@@ -47,7 +47,12 @@ MUTANTS_VERSION    := 27.1.0
 MUTATION_MIN_SCORE := 80
 MUTANTS_TIMEOUT    := 60
 MUTANTS_JOBS       := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-MUTANTS_FILES      :=
+# `?=` (not `:=`) so a MUTANTS_FILES set in the environment (the CI `mutation`
+# job) is honored instead of being clobbered by this empty default. Without
+# this, cargo-mutants runs on ALL files, which both blows the CI job timeout
+# and fails the gate on untestable-in-default-build files (tesseract_ocr.rs,
+# interface/*).
+MUTANTS_FILES      ?=
 
 .PHONY: build build-local prepare-tessdata test coverage fmt lint check-ocr check mutation
 
