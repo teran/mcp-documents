@@ -111,6 +111,11 @@ fn default_roots() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
         // System disk root, e.g. `C:\`.
+        // `#[mutants::skip]`: this branch compiles only on Windows (reading
+        // `SystemDrive` from the environment). The CI mutation gate runs on a
+        // non-Windows (default) build, where this code does not compile, so the
+        // mutants over `!d.is_empty()` cannot be killed by tests on this platform.
+        #[mutants::skip]
         let d = match std::env::var("SystemDrive") {
             Ok(d) if !d.is_empty() => format!("{d}\\"),
             _ => "C:\\".into(),
@@ -327,5 +332,51 @@ mod tests {
         if let Some(h) = home {
             unsafe { std::env::set_var("HOME", h) };
         }
+    }
+
+    /// Kills the `* → +` / `* → /` mutants over the size constants
+    /// (`DEFAULT_MAX_INPUT_BYTES`, `DEFAULT_MAX_DECOMPRESSED_BYTES`). The
+    /// comparison uses the literal value (not the constant itself), otherwise a
+    /// mutation would change both sides in lockstep and the mutant would survive.
+    #[test]
+    fn default_size_constants_are_exact() {
+        assert_eq!(DEFAULT_MAX_INPUT_BYTES, 262_144_000); // 250 * 1024 * 1024
+        assert_eq!(DEFAULT_MAX_DECOMPRESSED_BYTES, 268_435_456); // 256 * 1024 * 1024
+    }
+
+    /// Kills the `home_dir -> Option<PathBuf>` → `None` mutant: set a known
+    /// `HOME` and assert that `expand_tilde` and the default root are actually
+    /// built from it. If `home_dir` returned `None`, `expand_tilde("~")` would
+    /// yield the literal `"~"` and the root would be `/`, failing both asserts.
+    #[cfg(not(windows))]
+    #[test]
+    fn home_dir_is_used_when_home_is_set() {
+        let _g = lock();
+        let prev = std::env::var_os("HOME");
+        let fake_home = PathBuf::from("/fake/home/mcp-documents");
+        unsafe { std::env::set_var("HOME", &fake_home) };
+        remove_var("ALLOW_ROOT_DIR");
+
+        assert_eq!(expand_tilde("~"), fake_home);
+        assert_eq!(expand_tilde("~/Documents"), fake_home.join("Documents"));
+        assert_eq!(allowroot(), fake_home.join("Documents"));
+
+        match prev {
+            Some(h) => unsafe { std::env::set_var("HOME", h) },
+            None => unsafe { std::env::remove_var("HOME") },
+        }
+    }
+
+    /// Kills the `!v.trim().is_empty()` → `true` mutant in `allowroots`: an
+    /// empty/whitespace `ALLOW_ROOT_DIR` must fall back to the default roots (one
+    /// element), not yield an empty list after split/filter.
+    #[test]
+    fn allowroots_empty_env_falls_back_to_default() {
+        let _g = lock();
+        set_var("ALLOW_ROOT_DIR", "   ");
+        let roots = allowroots();
+        // The default root is always exactly one element (not an empty list).
+        assert_eq!(roots.len(), 1);
+        remove_var("ALLOW_ROOT_DIR");
     }
 }
