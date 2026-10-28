@@ -915,6 +915,26 @@ mod tests {
             .unwrap();
         assert_eq!(res.is_error, Some(true));
     }
+
+    #[test]
+    fn unused_fake_ports_are_exercised() {
+        // Exercise the remaining fake port method bodies (OCR/render errors and
+        // the info/extract success paths) so those branches are covered.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(FakeOcr.ocr_page(&bmp).is_err());
+        assert!(FakeRenderer.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(FakePdfText.pdf_info(&src).is_ok());
+        assert_eq!(FakeTextReader.text_info(&src).unwrap().word_count, 3);
+        assert_eq!(FakeTextReader.extract_text(&src).unwrap(), "one two three");
+        assert!(FakeSheet.spreadsheet_info(&src).is_ok());
+        assert_eq!(FakeSheet.extract_sheet(&src, None, None).unwrap(), "table");
+        assert!(FakePres.presentation_info(&src).is_ok());
+        assert_eq!(FakePres.extract_presentation(&src, None).unwrap(), "slide");
+        assert!(FakeCsv.csv_info(&src).is_ok());
+        assert_eq!(FakeCsv.extract_csv(&src, None).unwrap(), "csv");
+    }
 }
 
 #[cfg(test)]
@@ -1292,6 +1312,20 @@ mod extra_tests {
             Some(false)
         );
     }
+
+    #[test]
+    fn unused_extra_fakes_are_exercised() {
+        // Cover the remaining fake port bodies in this module: OCR/render
+        // errors, the PDF text source info, and the CSV reader info/extract.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(O.ocr_page(&bmp).is_err());
+        assert!(R.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(PT.pdf_info(&src).is_ok());
+        assert!(CR.csv_info(&src).is_ok());
+        assert_eq!(CR.extract_csv(&src, None).unwrap(), "csv");
+    }
 }
 
 #[cfg(test)]
@@ -1359,5 +1393,740 @@ mod annotation_tests {
             expect_read_only(&tool.annotations, &name);
             expect_description(&tool.description, &name);
         }
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    //! Focused tests closing remaining coverage gaps in the tool handlers:
+    //! every handler's source-from-params error branch, every handler's
+    //! use-case error branch, the JSON pages-needing-OCR closures, and the
+    //! to_range `Some` branch.
+
+    use std::sync::Arc;
+
+    use crate::application::{
+        ClassifyDocumentUseCase, CsvUseCase, PdfUseCase, PresentationUseCase, SpreadsheetUseCase,
+        TextDocUseCase,
+    };
+    use crate::domain::document::{Classification, DocumentKind, PageClassification, PdfType};
+    use crate::domain::error::ExtractionError;
+    use crate::domain::meta::{
+        CsvInfo, PdfInfo, PresentationInfo, SpreadsheetInfo, TextDocumentInfo,
+    };
+    use crate::domain::ports::{
+        CsvReader, DocumentExtractor, OcrProvider, PdfPageRenderer, PdfTextSource,
+        PresentationReader, SpreadsheetReader, TextDocumentReader,
+    };
+    use crate::domain::result::{ExtractionResult, PageBitmap, Source};
+    use base64::Engine as _;
+    use rmcp::handler::server::wrapper::Parameters;
+
+    use super::*;
+    use crate::interface::tools::{
+        ClassifyParams, CsvExtractParams, CsvInfoParams, PdfExtractParams, PdfInfoParams,
+        PresentationExtractParams, PresentationInfoParams, SpreadsheetExtractParams,
+        SpreadsheetInfoParams, TextExtractParams, TextInfoParams,
+    };
+
+    fn b64(p: &[u8]) -> Option<String> {
+        Some(base64::engine::general_purpose::STANDARD.encode(p))
+    }
+
+    #[derive(Clone)]
+    struct FCls {
+        kind: DocumentKind,
+        pages: Vec<usize>,
+        err: Option<ExtractionError>,
+    }
+    impl DocumentExtractor for FCls {
+        fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            let pt = if self.kind == DocumentKind::Pdf {
+                Some(PdfType::Mixed)
+            } else {
+                None
+            };
+            let pages = self
+                .pages
+                .iter()
+                .map(|&i| PageClassification::new(i, true, 0.9))
+                .collect();
+            Ok(Classification {
+                kind: self.kind,
+                pdf_type: pt,
+                pages_needing_ocr: pages,
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+            Ok(ExtractionResult::markdown_only(self.kind, None, "f".into()))
+        }
+    }
+
+    struct FOcr;
+    impl OcrProvider for FOcr {
+        fn ocr_page(&self, _b: &PageBitmap) -> Result<String, ExtractionError> {
+            Err(ExtractionError::OcrUnavailable("n".into()))
+        }
+    }
+    struct FRender;
+    impl PdfPageRenderer for FRender {
+        fn render_page(
+            &self,
+            _p: &[u8],
+            _i: usize,
+            _d: u32,
+        ) -> Result<PageBitmap, ExtractionError> {
+            Err(ExtractionError::Internal("r".into()))
+        }
+    }
+    struct FText;
+    impl PdfTextSource for FText {
+        fn pdf_info(&self, _s: &Source) -> Result<PdfInfo, ExtractionError> {
+            Ok(PdfInfo {
+                page_count: 1,
+                pdf_type: PdfType::TextBased,
+                pages_needing_ocr: Vec::new(),
+            })
+        }
+        fn extract_pages(
+            &self,
+            _s: &Source,
+            _p: &[usize],
+        ) -> Result<Vec<crate::domain::result::ExtractedPage>, ExtractionError> {
+            Ok(_p
+                .iter()
+                .map(|&p| crate::domain::result::ExtractedPage::local(p, "x".to_string()))
+                .collect())
+        }
+    }
+    struct FTextReader;
+    impl TextDocumentReader for FTextReader {
+        fn text_info(&self, _s: &Source) -> Result<TextDocumentInfo, ExtractionError> {
+            Ok(TextDocumentInfo {
+                word_count: 1,
+                char_count: 4,
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<String, ExtractionError> {
+            Ok("md".into())
+        }
+    }
+    struct FSheet;
+    impl SpreadsheetReader for FSheet {
+        fn spreadsheet_info(&self, _s: &Source) -> Result<SpreadsheetInfo, ExtractionError> {
+            Ok(SpreadsheetInfo {
+                sheets: vec![crate::domain::meta::SheetInfo {
+                    name: "S1".into(),
+                    rows: Some(1),
+                    cols: Some(1),
+                }],
+            })
+        }
+        fn extract_sheet(
+            &self,
+            _s: &Source,
+            _sh: Option<&str>,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("tbl".into())
+        }
+    }
+    struct FPres;
+    impl PresentationReader for FPres {
+        fn presentation_info(&self, _s: &Source) -> Result<PresentationInfo, ExtractionError> {
+            Ok(PresentationInfo { slide_count: 1 })
+        }
+        fn extract_presentation(
+            &self,
+            _s: &Source,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("sld".into())
+        }
+    }
+    struct FCsv;
+    impl CsvReader for FCsv {
+        fn csv_info(&self, _s: &Source) -> Result<CsvInfo, ExtractionError> {
+            Ok(CsvInfo {
+                row_count: 1,
+                column_count: 2,
+                header: vec!["a".into(), "b".into()],
+            })
+        }
+        fn extract_csv(
+            &self,
+            _s: &Source,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("csv".into())
+        }
+    }
+
+    fn build(
+        kind: DocumentKind,
+        pages: Vec<usize>,
+        err: Option<ExtractionError>,
+    ) -> DocumentsServer {
+        let e = Arc::new(FCls { kind, pages, err });
+        let classify = ClassifyDocumentUseCase::new(e.clone());
+        let pdf = PdfUseCase::new(
+            e.clone(),
+            Arc::new(FText),
+            Arc::new(FRender),
+            Arc::new(FOcr),
+        );
+        let td = TextDocUseCase::new(e.clone(), Arc::new(FTextReader));
+        let ss = SpreadsheetUseCase::new(e.clone(), Arc::new(FSheet));
+        let pr = PresentationUseCase::new(e.clone(), Arc::new(FPres));
+        let cv = CsvUseCase::new(e, Arc::new(FCsv));
+        DocumentsServer::new(classify, pdf, td, ss, pr, cv)
+    }
+
+    #[tokio::test]
+    async fn all_missing_handlers_round_trip() {
+        // The delegation bodies of doc_info / doc_extract / rtf_info /
+        // rtf_extract / xls_info / xls_extract / ppt_info / ppt_extract and the
+        // csv_info success path.
+        let s_doc = build(DocumentKind::Doc, vec![], None);
+        assert_eq!(
+            s_doc
+                .doc_info(Parameters(TextInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_doc
+                .doc_extract_markdown(Parameters(TextExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    word_from: None,
+                    word_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_rtf = build(DocumentKind::Rtf, vec![], None);
+        assert_eq!(
+            s_rtf
+                .rtf_info(Parameters(TextInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_rtf
+                .rtf_extract_markdown(Parameters(TextExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    word_from: None,
+                    word_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_xls = build(DocumentKind::Xls, vec![], None);
+        assert_eq!(
+            s_xls
+                .xls_info(Parameters(SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_xls
+                .xls_extract_markdown(Parameters(SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_ppt = build(DocumentKind::Ppt, vec![], None);
+        assert_eq!(
+            s_ppt
+                .ppt_info(Parameters(PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_ppt
+                .ppt_extract_markdown(Parameters(PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    slide_from: None,
+                    slide_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_csv = build(DocumentKind::Csv, vec![], None);
+        assert_eq!(
+            s_csv
+                .csv_info(Parameters(CsvInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn handlers_reject_invalid_base64_as_tool_error() {
+        // Every handler's `source_from_params` error branch: invalid base64
+        // bytes -> tool-level error (not a panic).
+        let s = build(DocumentKind::Pdf, vec![], None);
+        let bad = Some("!!!not-base64!!!".to_string());
+
+        assert_eq!(
+            s.classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: bad.clone(),
+                page_from: None,
+                page_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_info(
+                &TextInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_extract(
+                &TextExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    word_from: None,
+                    word_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_info(
+                &SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_extract(
+                &SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_info(
+                &PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_extract(
+                &PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    slide_from: None,
+                    slide_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x".into(),
+                bytes: bad,
+                row_from: None,
+                row_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn handlers_reject_when_classifier_fails_as_tool_error() {
+        // Every handler's use-case error branch: a classifier failure becomes a
+        // tool-level error.
+        let s = build(
+            DocumentKind::Pdf,
+            vec![],
+            Some(ExtractionError::Malformed("boom".into())),
+        );
+        let ok = b64(b"x");
+
+        assert_eq!(
+            s.classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: ok.clone(),
+                page_from: None,
+                page_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_info(
+                &TextInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Doc,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_extract(
+                &TextExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    word_from: None,
+                    word_to: None
+                },
+                DocumentKind::Doc,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_info(
+                &SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Xls,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_extract(
+                &SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                },
+                DocumentKind::Xls,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_info(
+                &PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Ppt,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_extract(
+                &PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    slide_from: None,
+                    slide_to: None
+                },
+                DocumentKind::Ppt,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x".into(),
+                bytes: ok,
+                row_from: None,
+                row_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn classify_and_pdf_info_include_ocr_pages_json() {
+        // A classifier with pages needing OCR populates the JSON arrays (the
+        // map closures in classify_document and pdf_info).
+        let s = build(DocumentKind::Pdf, vec![0, 1], None);
+        let ok = b64(b"x");
+
+        let cls = s
+            .classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: ok.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(cls.is_error, Some(false));
+        let t = cls.content[0].as_text().unwrap().text.clone();
+        // The non-empty pages_needing_ocr array is serialized, proving the map
+        // closure ran.
+        assert!(t.contains("\"needs_ocr\""));
+        assert!(t.contains("\"page_index\": 1"));
+
+        // pdf_info's pages come from the PdfTextSource, not the classifier, so
+        // use a text source that reports pages needing OCR to exercise the
+        // pdf_info map closure.
+        struct FTextPages;
+        impl PdfTextSource for FTextPages {
+            fn pdf_info(&self, _s: &Source) -> Result<PdfInfo, ExtractionError> {
+                Ok(PdfInfo {
+                    page_count: 2,
+                    pdf_type: PdfType::Mixed,
+                    pages_needing_ocr: vec![
+                        PageClassification::new(0, true, 0.9),
+                        PageClassification::new(1, true, 0.9),
+                    ],
+                })
+            }
+            fn extract_pages(
+                &self,
+                _s: &Source,
+                _p: &[usize],
+            ) -> Result<Vec<crate::domain::result::ExtractedPage>, ExtractionError> {
+                Ok(Vec::new())
+            }
+        }
+        let e = Arc::new(FCls {
+            kind: DocumentKind::Pdf,
+            pages: vec![],
+            err: None,
+        });
+        let s_info = DocumentsServer::new(
+            ClassifyDocumentUseCase::new(e.clone()),
+            PdfUseCase::new(
+                e.clone(),
+                Arc::new(FTextPages),
+                Arc::new(FRender),
+                Arc::new(FOcr),
+            ),
+            TextDocUseCase::new(e.clone(), Arc::new(FTextReader)),
+            SpreadsheetUseCase::new(e.clone(), Arc::new(FSheet)),
+            PresentationUseCase::new(e.clone(), Arc::new(FPres)),
+            CsvUseCase::new(e, Arc::new(FCsv)),
+        );
+        let info = s_info
+            .pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: ok,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(info.is_error, Some(false));
+        let t = info.content[0].as_text().unwrap().text.clone();
+        assert!(t.contains("\"needs_ocr\""));
+        assert!(t.contains("\"page_index\": 1"));
+
+        // Exercise the local FTextPages::extract_pages body (returns empty).
+        let pages = FTextPages
+            .extract_pages(&Source::Bytes(vec![1]), &[0])
+            .unwrap();
+        assert!(pages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_with_some_range_uses_to_range() {
+        // Passing a page_from/page_to exercises the `to_range` Some branch.
+        let s = build(DocumentKind::Pdf, vec![], None);
+        let res = s
+            .pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                page_from: Some(0),
+                page_to: Some(1),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(false));
+    }
+
+    #[test]
+    fn coverage_fake_ports_are_exercised() {
+        // Cover the remaining fake port bodies in this module.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(FOcr.ocr_page(&bmp).is_err());
+        assert!(FRender.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(
+            FCls {
+                kind: DocumentKind::Csv,
+                pages: vec![],
+                err: None
+            }
+            .extract_text(&src)
+            .is_ok()
+        );
+        assert!(FText.extract_pages(&src, &[0]).is_ok());
+        assert!(FTextReader.text_info(&src).is_ok());
+        assert!(FSheet.spreadsheet_info(&src).is_ok());
+        assert!(FPres.presentation_info(&src).is_ok());
+        assert!(FCsv.csv_info(&src).is_ok());
     }
 }

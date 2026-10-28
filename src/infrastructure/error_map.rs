@@ -153,6 +153,12 @@ mod tests {
             map_load_pdf_error(LoadPdfError::TooLarge(5, 6)),
             ExtractionError::ResourceLimit("PDF too large: 5 objects, 6 pages".into())
         );
+        assert_eq!(
+            map_load_pdf_error(LoadPdfError::Decryption(
+                pdf_render::pdf_syntax::DecryptionError::PasswordProtected
+            )),
+            ExtractionError::Encrypted
+        );
     }
 
     #[test]
@@ -203,6 +209,10 @@ mod tests {
         ));
         assert!(matches!(
             map_zip_error(zip::result::ZipError::InvalidArchive("bad".into())),
+            ExtractionError::Malformed(_)
+        ));
+        assert!(matches!(
+            map_zip_error(zip::result::ZipError::UnsupportedArchive("bad")),
             ExtractionError::Malformed(_)
         ));
     }

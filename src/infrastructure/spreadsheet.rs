@@ -249,4 +249,93 @@ mod tests {
         assert_eq!(info.sheets[0].rows, None);
         assert_eq!(info.sheets[0].cols, None);
     }
+
+    /// Build a single-sheet `.xlsx` whose one column holds `cells` (one per
+    /// data row) plus a header row, so `extract_sheet` sees multiple rows.
+    fn make_xlsx_one_column(cells: &[&str]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("[Content_Types].xml", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+</Types>"#,
+        )
+        .unwrap();
+        zip.start_file("_rels/.rels", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"#,
+        )
+        .unwrap();
+        zip.start_file("xl/workbook.xml", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        )
+        .unwrap();
+        zip.start_file("xl/_rels/workbook.xml.rels", opts).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>"#,
+        )
+        .unwrap();
+
+        let mut rows =
+            String::from(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>head</t></is></c></row>"#);
+        for (i, cell) in cells.iter().enumerate() {
+            let r = i + 2;
+            rows.push_str(&format!(
+                r#"<row r="{r}"><c r="A{r}" t="inlineStr"><is><t>{cell}</t></is></c></row>"#
+            ));
+        }
+        let ws = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>"#
+        );
+        zip.start_file("xl/worksheets/sheet1.xml", opts).unwrap();
+        zip.write_all(ws.as_bytes()).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn spreadsheet_info_rejects_garbage_bytes() {
+        let r = CalamineSpreadsheetReader::new();
+        let err = r
+            .spreadsheet_info(&Source::Bytes(b"not a workbook at all".to_vec()))
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::Malformed(_)));
+    }
+
+    #[test]
+    fn extract_sheet_by_found_name() {
+        // `sheet` matches an existing sheet name -> the `s.to_string()` branch.
+        let r = CalamineSpreadsheetReader::new();
+        let md = r
+            .extract_sheet(
+                &Source::Bytes(make_xlsx(&[Some("Sheet1")])),
+                Some("Sheet1"),
+                None,
+            )
+            .unwrap();
+        assert!(md.contains("Hello"));
+    }
+
+    #[test]
+    fn extract_sheet_multi_row_includes_data_rows() {
+        // Two data rows after the header -> the `rows.push` branch runs.
+        let r = CalamineSpreadsheetReader::new();
+        let bytes = make_xlsx_one_column(&["b", "c"]);
+        let md = r.extract_sheet(&Source::Bytes(bytes), None, None).unwrap();
+        assert!(md.contains("| b |"));
+        assert!(md.contains("| c |"));
+    }
 }
