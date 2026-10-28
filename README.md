@@ -20,7 +20,7 @@ Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts cle
     <img src="https://img.shields.io/github/license/teran/mcp-documents" alt="License">
   </a>
   <a href="https://github.com/teran/mcp-documents/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/badge/coverage-85%25%2B-green?logo=codecov" alt="Coverage">
+    <img src="https://img.shields.io/badge/coverage-95%25%2B-green?logo=codecov" alt="Coverage">
   </a>
   <a href="https://github.com/teran/mcp-documents">
     <img src="https://img.shields.io/github/languages/code-size/teran/mcp-documents" alt="Code Size">
@@ -41,7 +41,7 @@ Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts cle
 - 🗂️ **Ranges** — per-format ranges select a subset: PDF `page_range`, doc/docx/rtf `word_range`, xls/xlsx `sheet`+`row_range`, ppt/pptx `slide_range` (`.ppt` whole-doc only), csv `row_range`.
 - 🔌 **Pluggable architecture** — domain & application layers are decoupled from the MCP framework and the document libraries, making the OCR provider and even each extraction engine swappable.
 - 📦 **Single self-contained binary** — zero runtime system dependencies; OCR (vendored Tesseract) and PDF rendering are embedded/static so nothing needs to be installed at runtime. (The binary dynamically links glibc/libstdc++ only.)
-- 🧪 **Tested** — 85%+ line-coverage target enforced via `cargo llvm-cov` on a bare CI runner.
+- 🧪 **Tested** — 95%+ line-coverage target on the default build (85%+ on the `ocr-native` build) enforced via `cargo llvm-cov` on a bare CI runner.
 
 ---
 
@@ -253,7 +253,7 @@ cargo clippy --all-targets -- -D warnings
 # test
 cargo test
 
-# coverage (≥ 85% line target on both default and `ocr-native` builds)
+# coverage (≥ 95% line target on the default build; ≥ 85% on `ocr-native`)
 cargo install cargo-llvm-cov        # once
 cargo llvm-cov --html
 cargo llvm-cov --features ocr-native --html

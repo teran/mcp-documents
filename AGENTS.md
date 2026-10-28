@@ -8,7 +8,7 @@ Working on this Rust MCP server. Read this before making changes.
 - **Stack:** Rust, `tokio`, `rmcp` (MCP server framework), `pdf-inspector` (per-page PDF text + classification), `pdf-render` (pure-Rust PDF→image rasterizer), `anydoc` (word-processor word counting + legacy `.ppt` + ODF/EPUB fallback), `csv` (streaming), `calamine` (xls/xlsx), `zip` + `quick-xml` (PPTX slides), `tesseract-rs` (vendored OCR with embedded eng+rus tessdata).
 - **Architecture:** DDD / Clean Architecture (ports & adapters).
 - **Zero runtime system deps:** no runtime Tesseract / libtesseract / libleptonica / tessdata, and nothing is shelled out. (Build time needs a C++ compiler + CMake to compile the vendored Tesseract+Leptonica.)
-- **Coverage gate:** ≥ 85% **line** coverage via `cargo llvm-cov` on a bare CI runner.
+- **Coverage gate:** ≥ 95% **line** coverage on the default build (≥ 85% on the `ocr-native` build) via `cargo llvm-cov` on a bare CI runner.
 - See [`SPEC.md`](./SPEC.md) for the full technical specification and [`README.md`](./README.md) for user-facing docs.
 
 ## Layer map (module → layer) — do not blur these boundaries
@@ -55,13 +55,13 @@ Working on this Rust MCP server. Read this before making changes.
 - **No runtime system deps and no shell-out** — never invoke an external binary or link system libraries at runtime. Build the shipped artifact in release mode.
 - Prefer bytes mode / content-based detection over trusting caller-supplied extensions. Enforce size limits (map to `ResourceLimit`).
 
-## Testing expectations (≥ 85% line coverage)
+## Testing expectations (default ≥ 95% line coverage; `ocr-native` ≥ 85%)
 
 - **Unit-test domain + application** with fake/stub ports (in-memory `FakeExtractor`, `FakeOcrProvider`, `FakePageRenderer`, `FakePdfTextSource`, and fake text/spreadsheet/presentation/CSV readers) — no real OCR/render, no filesystem. This is where OCR routing/cap/concurrency, merge, and error logic are covered. Keep heavy logic in pure, fake-testable functions; keep the thin adapter glue small.
 - **Integration-test infrastructure adapters** against the committed fixtures in `tests/fixtures/` (`simple_text.docx`, `simple_text.pdf`, `simple_text.xlsx`) plus generated in-memory files (temp CSVs, PPTX zips built in `tests/format_adapters.rs`).
 - **Fixture gap:** the repo currently has **no** dedicated scanned/mixed/malformed/encrypted PDF fixtures committed. Those paths are covered by unit tests and the `ocr-native` synthetic test. Do **not** assume fixtures that don't exist; if you need them, add them (or note it).
 - Because OCR uses `tesseract-rs` with **embedded tessdata** (no runtime system deps), the real OCR integration tests **run normally on any machine** — they are **not** skipped for lack of a system Tesseract. (The Docker `ocr-native` build must pre-provision `rus.traineddata` and embed `eng`+`rus`.)
-- **`ocr-native` test:** `tests/ocr_native.rs` (gated `#![cfg(feature="ocr-native")]`) runs the real `TesseractOcrProvider` + `PdfRenderer` on a rendered **synthetic scanned page** and asserts non-empty Cyrillic-capable OCR. The **85% gate runs on BOTH the default and `ocr-native` builds** (measured default 91.9%, ocr-native 91.3%).
+- **`ocr-native` test:** `tests/ocr_native.rs` (gated `#![cfg(feature="ocr-native")]`) runs the real `TesseractOcrProvider` + `PdfRenderer` on a rendered **synthetic scanned page** and asserts non-empty Cyrillic-capable OCR. The gate is **≥ 95% on the default build** (measured ~97%) and **≥ 85% on the `ocr-native` build** (measured ~91%).
 - Use `#[tokio::test]` for async use cases (e.g. `PdfUseCase`); `#[cfg(test)]` modules for unit tests.
 - Interface/tools tested by invoking handlers with constructed params, asserting `CallToolResult` shape and error classification (including cross-kind rejections — e.g. `docx_info` on a PDF returns a tool-level `unsupported`).
 
@@ -80,12 +80,12 @@ cargo build --release --features ocr-native
 cargo fmt --check             # or: cargo fmt
 cargo clippy --all-targets -- -D warnings
 
-# coverage (CI gate runs on the ocr-native build; must pass ≥ 85 lines)
+# coverage (default-build gate ≥ 95 lines; ocr-native gate ≥ 85)
 cargo llvm-cov --html
-cargo llvm-cov --fail-under-lines 85
+cargo llvm-cov --fail-under-lines 95
 ```
 
-Run `cargo fmt`, `cargo clippy` with `-D warnings`, and the 85% coverage gate before considering work complete.
+Run `cargo fmt`, `cargo clippy` with `-D warnings`, and the 95% coverage gate (default build) / 85% gate (`ocr-native`) before considering work complete.
 
 ## Do-not-violate checklist
 
@@ -99,7 +99,7 @@ Run `cargo fmt`, `cargo clippy` with `-D warnings`, and the 85% coverage gate be
 - [ ] Tool surface stays **per-format**: `classify_document` + `<format>_info` / `<format>_extract_markdown` for pdf/doc/docx/rtf/xls/xlsx/ppt/pptx/csv; Markdown-only output; **do not reintroduce** `classify_pdf`/`extract_pdf`/`extract_pdf_text`/`extract_document`.
 - [ ] `.xls` vs `.xlsx` distinguished by **magic bytes** (not labeled all `Xlsx`); **PDF is the only OCR path**; non-PDF formats go through their dedicated adapters (no OCR).
 - [ ] OCR concurrency stays **bounded** by `OCR_CONCURRENCY` and `OCR_MAX_PAGES`; per-request OCR page count capped → `ResourceLimit`.
-- [ ] Coverage stays ≥ 85% lines.
+- [ ] Coverage stays ≥ 95% lines on the default build (≥ 85% on `ocr-native`).
 - [ ] Follow the file/module layout in SPEC §5.2; keep domain/application library-agnostic.
 
 Refer to [`SPEC.md`](./SPEC.md) for architecture, ports, tool API, config, and roadmap details.
