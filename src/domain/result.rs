@@ -280,4 +280,23 @@ mod tests {
         assert!(b.path().is_none());
         assert_eq!(b.label(), "<3 bytes>");
     }
+
+    #[test]
+    fn source_read_bytes_path_and_error() {
+        let dir = std::env::temp_dir().join(format!("mcp-src-read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("f.bin");
+        std::fs::write(&p, b"abc").unwrap();
+        // Path source reads from disk.
+        assert_eq!(Source::Path(p.clone()).read_bytes().unwrap(), b"abc");
+        // Bytes source is returned as-is.
+        assert_eq!(Source::Bytes(vec![9]).read_bytes().unwrap(), vec![9]);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // Missing path -> Io error (the map_err branch in read_bytes).
+        let missing =
+            std::env::temp_dir().join(format!("mcp-src-read-missing-{}", std::process::id()));
+        let err = Source::Path(missing).read_bytes().unwrap_err();
+        assert!(matches!(err, crate::domain::error::ExtractionError::Io(_)));
+    }
 }

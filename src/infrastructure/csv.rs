@@ -296,4 +296,24 @@ mod tests {
         let b = make_csv_reader();
         let _ = (a, b);
     }
+
+    #[test]
+    fn csv_open_missing_path_is_io_error() {
+        // Opening a non-existent path must map the file error (line 51 branch).
+        let r = CsvStreamReader::new();
+        let missing = std::env::temp_dir().join(format!("mcp-csv-missing-{}", std::process::id()));
+        let err = r.csv_info(&Source::Path(missing)).unwrap_err();
+        assert!(matches!(err, ExtractionError::Io(_)));
+    }
+
+    #[test]
+    fn csv_info_inconsistent_columns_is_malformed() {
+        // A row with more fields than the header triggers a record parse error,
+        // exercising the `Ok(Err(e)) => Err(e)` branch in csv_info_from_reader.
+        let path = tmp_csv("a,b\n1,2,3\n");
+        let r = CsvStreamReader::new();
+        let err = r.csv_info(&Source::Path(path.clone())).unwrap_err();
+        cleanup(&path);
+        assert!(matches!(err, ExtractionError::Malformed(_)));
+    }
 }

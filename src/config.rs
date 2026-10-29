@@ -210,16 +210,23 @@ mod tests {
     #[test]
     fn expand_tilde_handles_home_and_other() {
         let _g = lock();
-        // Bare `~` expands to the home dir.
-        if let Some(home) = home_dir() {
-            assert_eq!(expand_tilde("~"), home);
-            assert_eq!(expand_tilde("~/Documents"), home.join("Documents"));
-        }
+        // Pin a known home so the `~`/`~/` branches run regardless of the
+        // ambient HOME.
+        let home = std::env::temp_dir().join(format!("mcp-thome-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        set_var("HOME", home.to_str().unwrap());
+
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("~/Documents"), home.join("Documents"));
+
         // Non-tilde inputs are returned unchanged.
         assert_eq!(expand_tilde("/abs/path"), PathBuf::from("/abs/path"));
         assert_eq!(expand_tilde("rel/path"), PathBuf::from("rel/path"));
         // `~user` is intentionally NOT expanded (only `~` and `~/`).
         assert_eq!(expand_tilde("~other/x"), PathBuf::from("~other/x"));
+
+        std::fs::remove_dir_all(&home).unwrap();
+        remove_var("HOME");
     }
 
     #[test]
@@ -230,15 +237,18 @@ mod tests {
         assert_eq!(allowroots().len(), 1);
 
         // Comma/semicolon-separated list, each entry `~`-expanded.
+        let home = std::env::temp_dir().join(format!("mcp-aroot-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        set_var("HOME", home.to_str().unwrap());
         set_var("ALLOW_ROOT_DIR", "/a/b, ~/Downloads;/c/d");
         let roots = allowroots();
         assert_eq!(roots.len(), 3);
         assert_eq!(roots[0], PathBuf::from("/a/b"));
-        if let Some(home) = home_dir() {
-            assert_eq!(roots[1], home.join("Downloads"));
-        }
+        assert_eq!(roots[1], home.join("Downloads"));
         assert_eq!(roots[2], PathBuf::from("/c/d"));
         remove_var("ALLOW_ROOT_DIR");
+        std::fs::remove_dir_all(&home).unwrap();
+        remove_var("HOME");
     }
 
     #[test]
@@ -265,5 +275,26 @@ mod tests {
         set_var("OCR_MAX_PAGES", "not-a-number");
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         remove_var("OCR_MAX_PAGES");
+    }
+
+    #[test]
+    fn expand_tilde_and_allowroots_use_home_env() {
+        let _g = lock();
+        // Force a known home dir so the `~`/`~/` expansion branches run even in
+        // environments where HOME is otherwise unset.
+        let home = std::env::temp_dir().join(format!("mcp-home-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        set_var("HOME", home.to_str().unwrap());
+
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("~/Documents"), home.join("Documents"));
+
+        // allowroots() with HOME set defaults to <home>/Documents.
+        remove_var("ALLOW_ROOT_DIR");
+        assert_eq!(allowroot(), home.join("Documents"));
+
+        std::fs::remove_dir_all(&home).unwrap();
+        remove_var("HOME");
+        remove_var("ALLOW_ROOT_DIR");
     }
 }

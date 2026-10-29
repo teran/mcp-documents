@@ -286,4 +286,16 @@ mod tests {
         let err = e.classify(&Source::Bytes(b"garbage".to_vec())).unwrap_err();
         assert!(matches!(err, ExtractionError::Unsupported(_)));
     }
+
+    #[test]
+    fn make_extractor_builds_and_classifies_csv() {
+        let e = make_extractor();
+        let dir = std::env::temp_dir().join(format!("mcp-mext-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("d.csv");
+        std::fs::write(&p, "a,b\n1,2\n").unwrap();
+        let c = e.classify(&Source::Path(p)).unwrap();
+        assert_eq!(c.kind, DocumentKind::Csv);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

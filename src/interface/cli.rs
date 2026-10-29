@@ -538,4 +538,86 @@ mod tests {
         let cmd = CliCommand::Serve;
         assert!(run_cli(&cmd, &c, &pdf, &td, &ss, &pr, &cv).await.is_err());
     }
+
+    /// A classifier whose classification carries pages needing OCR, so the
+    /// per-page printing loop in `run_cli`'s Classify branch runs.
+    #[derive(Clone)]
+    struct FakeClassifierPages;
+    impl DocumentExtractor for FakeClassifierPages {
+        fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+            use crate::domain::document::PageClassification;
+            Ok(Classification {
+                kind: DocumentKind::Pdf,
+                pdf_type: Some(PdfType::TextBased),
+                pages_needing_ocr: vec![
+                    PageClassification::new(0, true, 0.5),
+                    PageClassification::new(1, false, 0.9),
+                ],
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+            Ok(ExtractionResult::markdown_only(
+                DocumentKind::Pdf,
+                None,
+                "x".into(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn run_cli_classify_prints_pages_needing_ocr() {
+        // Build use cases sharing the pages classifier; only `classify` matters
+        // here but run_cli needs all six.
+        let ext = Arc::new(FakeClassifierPages);
+        let classify = ClassifyDocumentUseCase::new(ext.clone());
+        let pdf = PdfUseCase::new(
+            ext.clone(),
+            Arc::new(FakePdfText),
+            Arc::new(FakeRenderer),
+            Arc::new(FakeOcr),
+        );
+        let text_doc = TextDocUseCase::new(ext.clone(), Arc::new(FakeTextReader));
+        let spreadsheet = SpreadsheetUseCase::new(ext.clone(), Arc::new(FakeSheetReader));
+        let presentation = PresentationUseCase::new(ext.clone(), Arc::new(FakePresReader));
+        let csv = CsvUseCase::new(ext, Arc::new(FakeCsvReader));
+        let cmd = CliCommand::Classify(PathBuf::from("a.pdf"));
+        assert!(
+            run_cli(
+                &cmd,
+                &classify,
+                &pdf,
+                &text_doc,
+                &spreadsheet,
+                &presentation,
+                &csv
+            )
+            .await
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn fake_ports_error_and_info_methods_are_exercised() {
+        // Exercise the otherwise-unused fake port method bodies so the error /
+        // info branches they implement are covered.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(FakeOcr.ocr_page(&bmp).is_err());
+        assert!(FakeRenderer.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(FakePdfText.pdf_info(&src).is_ok());
+        assert!(FakeTextReader.text_info(&src).is_ok());
+        assert!(FakeSheetReader.spreadsheet_info(&src).is_ok());
+        assert!(FakePresReader.presentation_info(&src).is_ok());
+        assert!(FakeCsvReader.csv_info(&src).is_ok());
+    }
+
+    #[test]
+    fn fake_pages_classifier_extract_text_runs() {
+        // FakeClassifierPages::extract_text (the whole-document fallback body).
+        let out = FakeClassifierPages
+            .extract_text(&Source::Bytes(vec![1]))
+            .unwrap();
+        assert_eq!(out.markdown, "x");
+    }
 }

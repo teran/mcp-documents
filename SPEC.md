@@ -17,7 +17,7 @@ The server extracts clean text/Markdown from a broad set of document formats. Th
 2. **Extract** text/Markdown per format: PDFs per-page (with OCR for scanned pages), spreadsheets per-sheet/row-range, presentations per-slide, CSV streaming, and word-processor formats by word range.
 3. **OCR** scanned / image-only **PDF** pages via a pluggable OCR provider and **merge** the results back into a coherent document, interleaving text and OCR pages in page order (non-PDF formats go straight through their adapter, no OCR).
 4. Expose these capabilities to MCP clients (e.g. Claude Code, opencode) over **stdio** as typed tools, in a **per-format** surface with Markdown-only output.
-5. Maintain a **line-coverage target of ≥ 85%**.
+5. Maintain a **line-coverage target of ≥ 95% on the default build** (≥ 85% on the `ocr-native` build).
 
 PDF+OCR was the founding capability; multi-format support is now a natural extension with a dedicated adapter per format.
 
@@ -556,9 +556,9 @@ All settings have safe defaults, are unprefixed (no `MCP_`), and are read at cal
 | `MAX_DECOMPRESSED_BYTES` | `256 * 1024 * 1024` (256 MiB) | Cap on the decompressed size of a single archive member (e.g. a PPTX slide part) — guards against decompression bombs. Exceeding → `ResourceLimit`. |
 | `ALLOW_ROOT_DIR` | `~/Documents` (Unix; `/` fallback if no home) / system volume root (Windows) | Every `path` is canonicalized (leading `~` expanded) and must be within this root; paths outside are rejected. The container sets `ALLOW_ROOT_DIR=/data`. |
 
-## 11. Testing & Coverage Strategy (≥ 85% line coverage)
+## 11. Testing & Coverage Strategy (default ≥ 95%; `ocr-native` ≥ 85%)
 
-The 85% target is a **whole-repo** line-coverage goal, achieved by testing each layer at the right level. The suite runs in **both configurations**: the default (pure-Rust, `NoopOcrProvider`) and the full `ocr-native` build (real `TesseractOcrProvider`), the latter being the coverage gate in Docker/CI.
+The coverage goal is achieved by testing each layer at the right level. The suite runs in **both configurations**: the default (pure-Rust, `NoopOcrProvider`) build targets **≥ 95%** line coverage, and the full `ocr-native` build (real `TesseractOcrProvider`) targets **≥ 85%** (the heavier OCR path has a smaller dedicated surface).
 
 ### 11.1 Unit tests (domain + application)
 
@@ -583,12 +583,13 @@ The 85% target is a **whole-repo** line-coverage goal, achieved by testing each 
 ```bash
 cargo install cargo-llvm-cov
 cargo llvm-cov --html
-cargo llvm-cov --fail-under-lines 85
+cargo llvm-cov --fail-under-lines 95          # default build gate
+cargo llvm-cov --features ocr-native --fail-under-lines 85   # ocr-native gate
 ```
 
 ### 11.5 Testing tools
 
-- `cargo llvm-cov` — coverage (the CI gate for the 85% line target).
+- `cargo llvm-cov` — coverage (the CI gate for the 95% line target on the default build; 85% on `ocr-native`).
 - `#[tokio::test]` — async use-case tests.
 - Fake/stub ports (in-memory implementations of the domain ports) — application-layer isolation.
 
@@ -599,11 +600,11 @@ A minimal CI pipeline runs on every PR/merge to the default branch. The **full O
 1. `cargo fmt --check`
 2. `cargo clippy --all-targets -- -D warnings`
 3. `cargo test`
-4. `cargo llvm-cov --fail-under-lines 85`
+4. `cargo llvm-cov --fail-under-lines 95`   (default build)
 
-The **85% line-coverage gate runs on BOTH builds**: the default (pure-Rust) build and the Docker/CI `ocr-native` build, both on a bare runner (no runtime OCR packages). Measured: **default 91.9%**, **ocr-native 91.3%** — both comfortably ≥ 85%. (The vendored C++ build is slow on first compile — cache the compiled libraries / Docker builder layers between runs.)
+The **line-coverage gate is ≥ 95% on the default (pure-Rust) build** and **≥ 85% on the Docker/CI `ocr-native` build**, both on a bare runner (no runtime OCR packages). Measured on the default build: **~97%** (comfortably ≥ 95%); the `ocr-native` build sits **~91%** (≥ 85%). (The vendored C++ build is slow on first compile — cache the compiled libraries / Docker builder layers between runs.)
 
-Artifacts: coverage report; fail the build if the 85% line gate is not met.
+Artifacts: coverage report; fail the build if the default-build 95% / `ocr-native` 85% line gate is not met.
 
 ## 13. Dependencies
 
@@ -638,7 +639,7 @@ tokio-test = "0.4"
 
 | Round | Scope | Notes |
 |-------|-------|-------|
-| **R1 (done)** | PDF classification + per-page text extraction + OCR routing (pure-Rust PDF→image renderer + `tesseract-rs` OCR with embedded eng+rus tessdata); single self-contained binary; 85% coverage | `pdf-inspector` + `rmcp` + `tesseract-rs` (embed-tessdata) + pure-Rust renderer |
+| **R1 (done)** | PDF classification + per-page text extraction + OCR routing (pure-Rust PDF→image renderer + `tesseract-rs` OCR with embedded eng+rus tessdata); single self-contained binary; 95%/85% coverage (default/ocr-native) | `pdf-inspector` + `rmcp` + `tesseract-rs` (embed-tessdata) + pure-Rust renderer |
 | **R2 (done)** | Per-format tool surface — `_info`/`_extract_markdown` for pdf/doc/docx/rtf/xls/xlsx/ppt/pptx/csv with dedicated adapters (`pdf-inspector`, `calamine`, `csv`, `zip`+`quick-xml`, `anydoc`); ranges per format; real bounded page-parallel OCR; `.xls`/`.xlsx` distinguished by magic bytes; mixed-PDF per-page interleaving resolved | Per-format use cases + adapters; `classify_document` retained as the single generic classifier |
 | **R3 (candidate)** | OCR quality, further backpressure/large-file streaming, optional HTTP transport, dedicated ODF/EPUB tools, scanned/mixed fixture coverage | Depends on feedback |
 

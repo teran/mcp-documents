@@ -428,4 +428,46 @@ mod tests {
         ];
         assert_eq!(pages_in_range(&pc, 0..3), vec![1, 2]);
     }
+
+    #[tokio::test]
+    async fn empty_page_range_returns_empty_markdown() {
+        // A page range that resolves to zero pages yields an empty-but-valid
+        // result (the markdown_only early return).
+        let u = uc(info_with(&[]), DocumentKind::Pdf);
+        let out = u
+            .extract_markdown(&Source::Bytes(vec![9]), Some(4..4))
+            .await
+            .unwrap();
+        assert_eq!(out.markdown, "");
+    }
+
+    struct FailingOcr;
+    impl OcrProvider for FailingOcr {
+        fn ocr_page(&self, _b: &PageBitmap) -> Result<String, ExtractionError> {
+            Err(ExtractionError::OcrUnavailable("no ocr".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn ocr_error_is_propagated() {
+        // An OCR failure inside the concurrent pipeline must surface as the
+        // underlying domain error (the Ok(Err) join branch).
+        let u = PdfUseCase::new_with_limits(
+            Arc::new(FakeClassifier {
+                kind: DocumentKind::Pdf,
+            }),
+            Arc::new(FakeTextSource {
+                info: info_with(&[0]),
+            }),
+            Arc::new(FakeRenderer),
+            Arc::new(FailingOcr),
+            100,
+            2,
+        );
+        let err = u
+            .extract_markdown(&Source::Bytes(vec![9]), None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ExtractionError::OcrUnavailable(_)));
+    }
 }

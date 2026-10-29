@@ -60,10 +60,10 @@ build-local:
 test:
 	$(CARGO) test
 
-## Line coverage (≥ 85% target) via cargo-llvm-cov.
+## Line coverage (≥ 95% target on the default build) via cargo-llvm-cov.
 coverage:
 	$(CARGO) llvm-cov --html
-	$(CARGO) llvm-cov --fail-under-lines 85
+	$(CARGO) llvm-cov --fail-under-lines 95
 
 ## Format source.
 fmt:
