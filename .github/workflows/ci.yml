@@ -12,13 +12,13 @@
 #   fmt        -> cargo fmt --check
 #   clippy     -> cargo clippy --all-targets -- -D warnings
 #   test       -> cargo test (+ cargo build --release)
-#   coverage   -> cargo llvm-cov --fail-under-lines 85        (default build)
+#   coverage   -> cargo llvm-cov --fail-under-lines 95        (default build)
 #   ocr-native -> build + test + llvm-cov with --features ocr-native
 #   audit      -> cargo audit
 #   deny       -> cargo deny check
 #
-# The >=85% line-coverage gate is enforced on BOTH the default and `ocr-native`
-# builds (coverage and ocr-native jobs).
+# The line-coverage gate is >=95% on the default build and >=85% on the
+# `ocr-native` build (coverage and ocr-native jobs).
 
 name: CI
 
@@ -87,8 +87,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: cargo llvm-cov --fail-under-lines 85
-        run: cargo llvm-cov --fail-under-lines 85
+      - name: cargo llvm-cov --fail-under-lines 95
+        run: cargo llvm-cov --fail-under-lines 95
 
   ocr-native:
     # The full OCR build. Compiles vendored Tesseract + Leptonica (needs a C++

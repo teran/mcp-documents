@@ -69,7 +69,14 @@ impl DocumentsServer {
     /// also returns the PDF type (TextBased/Scanned/ImageBased/Mixed) and the
     /// pages needing OCR.
     #[tool(
-        description = "Classify any supported document, returning its kind and (for PDFs) the PDF type and pages needing OCR"
+        description = "Classify any supported document, returning its kind and (for PDFs) the PDF type and pages needing OCR. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; the tool never modifies its environment.",
+        annotations(
+            title = "Classify document",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn classify_document(
         &self,
@@ -102,7 +109,16 @@ impl DocumentsServer {
 
     /// PDF metadata: page count, PDF type (TextBased/Scanned/ImageBased/Mixed)
     /// and which pages need OCR.
-    #[tool(description = "PDF metadata: page count, PDF type, and pages needing OCR")]
+    #[tool(
+        description = "PDF metadata: page count, PDF type, and pages needing OCR. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "PDF metadata",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn pdf_info(
         &self,
         Parameters(params): Parameters<PdfInfoParams>,
@@ -131,7 +147,14 @@ impl DocumentsServer {
     /// Extract a PDF as Markdown. Scanned pages are OCR'd; the optional
     /// `page_from`/`page_to` (0-based, end-exclusive) selects a page range.
     #[tool(
-        description = "Extract a PDF to Markdown (OCR for scanned pages); optional 0-based page_from/page_to range"
+        description = "Extract a PDF to Markdown (OCR for scanned pages); optional 0-based page_from/page_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract PDF as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn pdf_extract_markdown(
         &self,
@@ -153,7 +176,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// Word count and character count for a legacy binary `.doc`.
-    #[tool(description = "Word and character counts for a .doc document")]
+    #[tool(
+        description = "Word and character counts for a .doc document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".doc word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn doc_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -164,7 +196,14 @@ impl DocumentsServer {
     /// Extract a `.doc` as Markdown; optional `word_from`/`word_to` (0-based,
     /// end-exclusive) selects a word range.
     #[tool(
-        description = "Extract a .doc to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract a .doc to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .doc as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn doc_extract_markdown(
         &self,
@@ -174,7 +213,16 @@ impl DocumentsServer {
     }
 
     /// Word count and character count for a `.docx`.
-    #[tool(description = "Word and character counts for a .docx document")]
+    #[tool(
+        description = "Word and character counts for a .docx document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".docx word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn docx_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -185,7 +233,14 @@ impl DocumentsServer {
     /// Extract a `.docx` as Markdown; optional `word_from`/`word_to` (0-based,
     /// end-exclusive) selects a word range.
     #[tool(
-        description = "Extract a .docx to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract a .docx to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .docx as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn docx_extract_markdown(
         &self,
@@ -195,7 +250,16 @@ impl DocumentsServer {
     }
 
     /// Word count and character count for an RTF document.
-    #[tool(description = "Word and character counts for an RTF document")]
+    #[tool(
+        description = "Word and character counts for an RTF document. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "RTF word counts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn rtf_info(
         &self,
         Parameters(params): Parameters<TextInfoParams>,
@@ -206,7 +270,14 @@ impl DocumentsServer {
     /// Extract an RTF document as Markdown; optional `word_from`/`word_to`
     /// (0-based, end-exclusive) selects a word range.
     #[tool(
-        description = "Extract an RTF document to Markdown; optional 0-based word_from/word_to word range"
+        description = "Extract an RTF document to Markdown; optional 0-based word_from/word_to word range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract RTF as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn rtf_extract_markdown(
         &self,
@@ -220,7 +291,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// List the sheets (with row/col counts) of a legacy binary `.xls`.
-    #[tool(description = "List the sheets of a .xls workbook")]
+    #[tool(
+        description = "List the sheets of a .xls workbook. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".xls sheet list",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn xls_info(
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
@@ -231,7 +311,14 @@ impl DocumentsServer {
     /// Extract a `.xls` sheet as a Markdown table; optional `sheet` name and
     /// `row_from`/`row_to` (0-based, end-exclusive) row range.
     #[tool(
-        description = "Extract a .xls sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range"
+        description = "Extract a .xls sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .xls sheet as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn xls_extract_markdown(
         &self,
@@ -241,7 +328,16 @@ impl DocumentsServer {
     }
 
     /// List the sheets (with row/col counts) of a `.xlsx` workbook.
-    #[tool(description = "List the sheets of a .xlsx workbook")]
+    #[tool(
+        description = "List the sheets of a .xlsx workbook. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".xlsx sheet list",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn xlsx_info(
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
@@ -252,7 +348,14 @@ impl DocumentsServer {
     /// Extract a `.xlsx` sheet as a Markdown table; optional `sheet` name and
     /// `row_from`/`row_to` (0-based, end-exclusive) row range.
     #[tool(
-        description = "Extract a .xlsx sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range"
+        description = "Extract a .xlsx sheet as a Markdown table; optional sheet name and 0-based row_from/row_to range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .xlsx sheet as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn xlsx_extract_markdown(
         &self,
@@ -266,7 +369,16 @@ impl DocumentsServer {
     // ------------------------------------------------------------------
 
     /// Slide count for a legacy binary `.ppt` (whole-document unit; no range).
-    #[tool(description = "Slide count for a .ppt presentation (legacy; whole-document unit)")]
+    #[tool(
+        description = "Slide count for a .ppt presentation (legacy; whole-document unit). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".ppt slide count",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn ppt_info(
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
@@ -277,7 +389,14 @@ impl DocumentsServer {
     /// Extract a `.ppt` as Markdown (whole document; `slide_from`/`slide_to`
     /// are not supported for legacy binary `.ppt`).
     #[tool(
-        description = "Extract a .ppt to Markdown (whole document; no slide range for legacy binary .ppt)"
+        description = "Extract a .ppt to Markdown (whole document; no slide range for legacy binary .ppt). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .ppt as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn ppt_extract_markdown(
         &self,
@@ -287,7 +406,16 @@ impl DocumentsServer {
     }
 
     /// Slide count for a `.pptx` presentation.
-    #[tool(description = "Slide count for a .pptx presentation")]
+    #[tool(
+        description = "Slide count for a .pptx presentation. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = ".pptx slide count",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn pptx_info(
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
@@ -298,7 +426,14 @@ impl DocumentsServer {
     /// Extract a `.pptx` as Markdown; optional `slide_from`/`slide_to`
     /// (0-based, end-exclusive) selects a slide range.
     #[tool(
-        description = "Extract a .pptx to Markdown; optional 0-based slide_from/slide_to slide range"
+        description = "Extract a .pptx to Markdown; optional 0-based slide_from/slide_to slide range. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract .pptx as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn pptx_extract_markdown(
         &self,
@@ -313,7 +448,16 @@ impl DocumentsServer {
 
     /// CSV metadata in a single streaming pass: total rows, column count and
     /// header.
-    #[tool(description = "CSV metadata: total rows, column count, header (streaming)")]
+    #[tool(
+        description = "CSV metadata: total rows, column count, header (streaming). Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; no side effects.",
+        annotations(
+            title = "CSV metadata",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
     async fn csv_info(
         &self,
         Parameters(params): Parameters<CsvInfoParams>,
@@ -337,7 +481,14 @@ impl DocumentsServer {
     /// `row_from`/`row_to` (0-based over data rows, end-exclusive) selects a
     /// row range. The header row is always shown.
     #[tool(
-        description = "Extract a CSV as a Markdown table (streaming); optional 0-based row_from/row_to over data rows"
+        description = "Extract a CSV as a Markdown table (streaming); optional 0-based row_from/row_to over data rows. Read-only: pass a file `path` within ALLOW_ROOT_DIR or base64 `bytes`; output is Markdown only; no side effects.",
+        annotations(
+            title = "Extract CSV as Markdown",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
     async fn csv_extract_markdown(
         &self,
@@ -764,6 +915,26 @@ mod tests {
             .unwrap();
         assert_eq!(res.is_error, Some(true));
     }
+
+    #[test]
+    fn unused_fake_ports_are_exercised() {
+        // Exercise the remaining fake port method bodies (OCR/render errors and
+        // the info/extract success paths) so those branches are covered.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(FakeOcr.ocr_page(&bmp).is_err());
+        assert!(FakeRenderer.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(FakePdfText.pdf_info(&src).is_ok());
+        assert_eq!(FakeTextReader.text_info(&src).unwrap().word_count, 3);
+        assert_eq!(FakeTextReader.extract_text(&src).unwrap(), "one two three");
+        assert!(FakeSheet.spreadsheet_info(&src).is_ok());
+        assert_eq!(FakeSheet.extract_sheet(&src, None, None).unwrap(), "table");
+        assert!(FakePres.presentation_info(&src).is_ok());
+        assert_eq!(FakePres.extract_presentation(&src, None).unwrap(), "slide");
+        assert!(FakeCsv.csv_info(&src).is_ok());
+        assert_eq!(FakeCsv.extract_csv(&src, None).unwrap(), "csv");
+    }
 }
 
 #[cfg(test)]
@@ -1140,5 +1311,822 @@ mod extra_tests {
             .is_error,
             Some(false)
         );
+    }
+
+    #[test]
+    fn unused_extra_fakes_are_exercised() {
+        // Cover the remaining fake port bodies in this module: OCR/render
+        // errors, the PDF text source info, and the CSV reader info/extract.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(O.ocr_page(&bmp).is_err());
+        assert!(R.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(PT.pdf_info(&src).is_ok());
+        assert!(CR.csv_info(&src).is_ok());
+        assert_eq!(CR.extract_csv(&src, None).unwrap(), "csv");
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    //! Verify M04: every tool carries per-tool Annotations (readOnlyHint,
+    //! destructiveHint, idempotentHint, openWorldHint) plus a title and a
+    //! per-tool description carrying usage guidance. The `#[tool(...)]` macro
+    //! generates a `<name>_tool_attr()` associated function returning the
+    //! `rmcp::model::Tool` metadata; we assert on those.
+
+    use rmcp::model::ToolAnnotations;
+
+    use super::DocumentsServer;
+
+    /// Expected annotations for every read-only extraction tool.
+    fn expect_read_only(a: &Option<ToolAnnotations>, tool: &str) {
+        let ann = a
+            .as_ref()
+            .unwrap_or_else(|| panic!("{tool}: missing annotations"));
+        assert_eq!(ann.read_only_hint, Some(true), "{tool}: readOnlyHint");
+        assert_eq!(ann.destructive_hint, Some(false), "{tool}: destructiveHint");
+        assert_eq!(ann.idempotent_hint, Some(true), "{tool}: idempotentHint");
+        assert_eq!(ann.open_world_hint, Some(false), "{tool}: openWorldHint");
+        assert!(
+            ann.title.as_deref().is_some_and(|t| !t.is_empty()),
+            "{tool}: annotations.title must be a non-empty human-readable title"
+        );
+    }
+
+    /// Expected: a non-empty `description` (the per-tool guidance channel).
+    fn expect_description(d: &Option<std::borrow::Cow<'static, str>>, tool: &str) {
+        assert!(
+            d.as_deref().is_some_and(|s| !s.is_empty()),
+            "{tool}: description must carry per-tool guidance"
+        );
+    }
+
+    #[test]
+    fn all_tools_carry_read_only_annotations() {
+        let tools = [
+            DocumentsServer::classify_document_tool_attr(),
+            DocumentsServer::pdf_info_tool_attr(),
+            DocumentsServer::pdf_extract_markdown_tool_attr(),
+            DocumentsServer::doc_info_tool_attr(),
+            DocumentsServer::doc_extract_markdown_tool_attr(),
+            DocumentsServer::docx_info_tool_attr(),
+            DocumentsServer::docx_extract_markdown_tool_attr(),
+            DocumentsServer::rtf_info_tool_attr(),
+            DocumentsServer::rtf_extract_markdown_tool_attr(),
+            DocumentsServer::xls_info_tool_attr(),
+            DocumentsServer::xls_extract_markdown_tool_attr(),
+            DocumentsServer::xlsx_info_tool_attr(),
+            DocumentsServer::xlsx_extract_markdown_tool_attr(),
+            DocumentsServer::ppt_info_tool_attr(),
+            DocumentsServer::ppt_extract_markdown_tool_attr(),
+            DocumentsServer::pptx_info_tool_attr(),
+            DocumentsServer::pptx_extract_markdown_tool_attr(),
+            DocumentsServer::csv_info_tool_attr(),
+            DocumentsServer::csv_extract_markdown_tool_attr(),
+        ];
+
+        assert_eq!(tools.len(), 19, "all 19 tools must be covered");
+        for tool in &tools {
+            let name = tool.name.to_string();
+            expect_read_only(&tool.annotations, &name);
+            expect_description(&tool.description, &name);
+        }
+    }
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    //! Focused tests closing remaining coverage gaps in the tool handlers:
+    //! every handler's source-from-params error branch, every handler's
+    //! use-case error branch, the JSON pages-needing-OCR closures, and the
+    //! to_range `Some` branch.
+
+    use std::sync::Arc;
+
+    use crate::application::{
+        ClassifyDocumentUseCase, CsvUseCase, PdfUseCase, PresentationUseCase, SpreadsheetUseCase,
+        TextDocUseCase,
+    };
+    use crate::domain::document::{Classification, DocumentKind, PageClassification, PdfType};
+    use crate::domain::error::ExtractionError;
+    use crate::domain::meta::{
+        CsvInfo, PdfInfo, PresentationInfo, SpreadsheetInfo, TextDocumentInfo,
+    };
+    use crate::domain::ports::{
+        CsvReader, DocumentExtractor, OcrProvider, PdfPageRenderer, PdfTextSource,
+        PresentationReader, SpreadsheetReader, TextDocumentReader,
+    };
+    use crate::domain::result::{ExtractionResult, PageBitmap, Source};
+    use base64::Engine as _;
+    use rmcp::handler::server::wrapper::Parameters;
+
+    use super::*;
+    use crate::interface::tools::{
+        ClassifyParams, CsvExtractParams, CsvInfoParams, PdfExtractParams, PdfInfoParams,
+        PresentationExtractParams, PresentationInfoParams, SpreadsheetExtractParams,
+        SpreadsheetInfoParams, TextExtractParams, TextInfoParams,
+    };
+
+    fn b64(p: &[u8]) -> Option<String> {
+        Some(base64::engine::general_purpose::STANDARD.encode(p))
+    }
+
+    #[derive(Clone)]
+    struct FCls {
+        kind: DocumentKind,
+        pages: Vec<usize>,
+        err: Option<ExtractionError>,
+    }
+    impl DocumentExtractor for FCls {
+        fn classify(&self, _s: &Source) -> Result<Classification, ExtractionError> {
+            if let Some(e) = &self.err {
+                return Err(e.clone());
+            }
+            let pt = if self.kind == DocumentKind::Pdf {
+                Some(PdfType::Mixed)
+            } else {
+                None
+            };
+            let pages = self
+                .pages
+                .iter()
+                .map(|&i| PageClassification::new(i, true, 0.9))
+                .collect();
+            Ok(Classification {
+                kind: self.kind,
+                pdf_type: pt,
+                pages_needing_ocr: pages,
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<ExtractionResult, ExtractionError> {
+            Ok(ExtractionResult::markdown_only(self.kind, None, "f".into()))
+        }
+    }
+
+    struct FOcr;
+    impl OcrProvider for FOcr {
+        fn ocr_page(&self, _b: &PageBitmap) -> Result<String, ExtractionError> {
+            Err(ExtractionError::OcrUnavailable("n".into()))
+        }
+    }
+    struct FRender;
+    impl PdfPageRenderer for FRender {
+        fn render_page(
+            &self,
+            _p: &[u8],
+            _i: usize,
+            _d: u32,
+        ) -> Result<PageBitmap, ExtractionError> {
+            Err(ExtractionError::Internal("r".into()))
+        }
+    }
+    struct FText;
+    impl PdfTextSource for FText {
+        fn pdf_info(&self, _s: &Source) -> Result<PdfInfo, ExtractionError> {
+            Ok(PdfInfo {
+                page_count: 1,
+                pdf_type: PdfType::TextBased,
+                pages_needing_ocr: Vec::new(),
+            })
+        }
+        fn extract_pages(
+            &self,
+            _s: &Source,
+            _p: &[usize],
+        ) -> Result<Vec<crate::domain::result::ExtractedPage>, ExtractionError> {
+            Ok(_p
+                .iter()
+                .map(|&p| crate::domain::result::ExtractedPage::local(p, "x".to_string()))
+                .collect())
+        }
+    }
+    struct FTextReader;
+    impl TextDocumentReader for FTextReader {
+        fn text_info(&self, _s: &Source) -> Result<TextDocumentInfo, ExtractionError> {
+            Ok(TextDocumentInfo {
+                word_count: 1,
+                char_count: 4,
+            })
+        }
+        fn extract_text(&self, _s: &Source) -> Result<String, ExtractionError> {
+            Ok("md".into())
+        }
+    }
+    struct FSheet;
+    impl SpreadsheetReader for FSheet {
+        fn spreadsheet_info(&self, _s: &Source) -> Result<SpreadsheetInfo, ExtractionError> {
+            Ok(SpreadsheetInfo {
+                sheets: vec![crate::domain::meta::SheetInfo {
+                    name: "S1".into(),
+                    rows: Some(1),
+                    cols: Some(1),
+                }],
+            })
+        }
+        fn extract_sheet(
+            &self,
+            _s: &Source,
+            _sh: Option<&str>,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("tbl".into())
+        }
+    }
+    struct FPres;
+    impl PresentationReader for FPres {
+        fn presentation_info(&self, _s: &Source) -> Result<PresentationInfo, ExtractionError> {
+            Ok(PresentationInfo { slide_count: 1 })
+        }
+        fn extract_presentation(
+            &self,
+            _s: &Source,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("sld".into())
+        }
+    }
+    struct FCsv;
+    impl CsvReader for FCsv {
+        fn csv_info(&self, _s: &Source) -> Result<CsvInfo, ExtractionError> {
+            Ok(CsvInfo {
+                row_count: 1,
+                column_count: 2,
+                header: vec!["a".into(), "b".into()],
+            })
+        }
+        fn extract_csv(
+            &self,
+            _s: &Source,
+            _r: Option<std::ops::Range<usize>>,
+        ) -> Result<String, ExtractionError> {
+            Ok("csv".into())
+        }
+    }
+
+    fn build(
+        kind: DocumentKind,
+        pages: Vec<usize>,
+        err: Option<ExtractionError>,
+    ) -> DocumentsServer {
+        let e = Arc::new(FCls { kind, pages, err });
+        let classify = ClassifyDocumentUseCase::new(e.clone());
+        let pdf = PdfUseCase::new(
+            e.clone(),
+            Arc::new(FText),
+            Arc::new(FRender),
+            Arc::new(FOcr),
+        );
+        let td = TextDocUseCase::new(e.clone(), Arc::new(FTextReader));
+        let ss = SpreadsheetUseCase::new(e.clone(), Arc::new(FSheet));
+        let pr = PresentationUseCase::new(e.clone(), Arc::new(FPres));
+        let cv = CsvUseCase::new(e, Arc::new(FCsv));
+        DocumentsServer::new(classify, pdf, td, ss, pr, cv)
+    }
+
+    #[tokio::test]
+    async fn all_missing_handlers_round_trip() {
+        // The delegation bodies of doc_info / doc_extract / rtf_info /
+        // rtf_extract / xls_info / xls_extract / ppt_info / ppt_extract and the
+        // csv_info success path.
+        let s_doc = build(DocumentKind::Doc, vec![], None);
+        assert_eq!(
+            s_doc
+                .doc_info(Parameters(TextInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_doc
+                .doc_extract_markdown(Parameters(TextExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    word_from: None,
+                    word_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_rtf = build(DocumentKind::Rtf, vec![], None);
+        assert_eq!(
+            s_rtf
+                .rtf_info(Parameters(TextInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_rtf
+                .rtf_extract_markdown(Parameters(TextExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    word_from: None,
+                    word_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_xls = build(DocumentKind::Xls, vec![], None);
+        assert_eq!(
+            s_xls
+                .xls_info(Parameters(SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_xls
+                .xls_extract_markdown(Parameters(SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_ppt = build(DocumentKind::Ppt, vec![], None);
+        assert_eq!(
+            s_ppt
+                .ppt_info(Parameters(PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+        assert_eq!(
+            s_ppt
+                .ppt_extract_markdown(Parameters(PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: b64(b"x"),
+                    slide_from: None,
+                    slide_to: None
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+
+        let s_csv = build(DocumentKind::Csv, vec![], None);
+        assert_eq!(
+            s_csv
+                .csv_info(Parameters(CsvInfoParams {
+                    path: "x".into(),
+                    bytes: b64(b"x")
+                }))
+                .await
+                .unwrap()
+                .is_error,
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn handlers_reject_invalid_base64_as_tool_error() {
+        // Every handler's `source_from_params` error branch: invalid base64
+        // bytes -> tool-level error (not a panic).
+        let s = build(DocumentKind::Pdf, vec![], None);
+        let bad = Some("!!!not-base64!!!".to_string());
+
+        assert_eq!(
+            s.classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: bad.clone(),
+                page_from: None,
+                page_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_info(
+                &TextInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_extract(
+                &TextExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    word_from: None,
+                    word_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_info(
+                &SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_extract(
+                &SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_info(
+                &PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: bad.clone()
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_extract(
+                &PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: bad.clone(),
+                    slide_from: None,
+                    slide_to: None
+                },
+                DocumentKind::Pdf,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: bad.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x".into(),
+                bytes: bad,
+                row_from: None,
+                row_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn handlers_reject_when_classifier_fails_as_tool_error() {
+        // Every handler's use-case error branch: a classifier failure becomes a
+        // tool-level error.
+        let s = build(
+            DocumentKind::Pdf,
+            vec![],
+            Some(ExtractionError::Malformed("boom".into())),
+        );
+        let ok = b64(b"x");
+
+        assert_eq!(
+            s.classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: ok.clone(),
+                page_from: None,
+                page_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_info(
+                &TextInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Doc,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.text_extract(
+                &TextExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    word_from: None,
+                    word_to: None
+                },
+                DocumentKind::Doc,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_info(
+                &SpreadsheetInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Xls,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.spreadsheet_extract(
+                &SpreadsheetExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    sheet: None,
+                    row_from: None,
+                    row_to: None
+                },
+                DocumentKind::Xls,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_info(
+                &PresentationInfoParams {
+                    path: "x".into(),
+                    bytes: ok.clone()
+                },
+                DocumentKind::Ppt,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.presentation_extract(
+                &PresentationExtractParams {
+                    path: "x".into(),
+                    bytes: ok.clone(),
+                    slide_from: None,
+                    slide_to: None
+                },
+                DocumentKind::Ppt,
+            )
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_info(Parameters(CsvInfoParams {
+                path: "x".into(),
+                bytes: ok.clone()
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+        assert_eq!(
+            s.csv_extract_markdown(Parameters(CsvExtractParams {
+                path: "x".into(),
+                bytes: ok,
+                row_from: None,
+                row_to: None
+            }))
+            .await
+            .unwrap()
+            .is_error,
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn classify_and_pdf_info_include_ocr_pages_json() {
+        // A classifier with pages needing OCR populates the JSON arrays (the
+        // map closures in classify_document and pdf_info).
+        let s = build(DocumentKind::Pdf, vec![0, 1], None);
+        let ok = b64(b"x");
+
+        let cls = s
+            .classify_document(Parameters(ClassifyParams {
+                path: "x".into(),
+                bytes: ok.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(cls.is_error, Some(false));
+        let t = cls.content[0].as_text().unwrap().text.clone();
+        // The non-empty pages_needing_ocr array is serialized, proving the map
+        // closure ran.
+        assert!(t.contains("\"needs_ocr\""));
+        assert!(t.contains("\"page_index\": 1"));
+
+        // pdf_info's pages come from the PdfTextSource, not the classifier, so
+        // use a text source that reports pages needing OCR to exercise the
+        // pdf_info map closure.
+        struct FTextPages;
+        impl PdfTextSource for FTextPages {
+            fn pdf_info(&self, _s: &Source) -> Result<PdfInfo, ExtractionError> {
+                Ok(PdfInfo {
+                    page_count: 2,
+                    pdf_type: PdfType::Mixed,
+                    pages_needing_ocr: vec![
+                        PageClassification::new(0, true, 0.9),
+                        PageClassification::new(1, true, 0.9),
+                    ],
+                })
+            }
+            fn extract_pages(
+                &self,
+                _s: &Source,
+                _p: &[usize],
+            ) -> Result<Vec<crate::domain::result::ExtractedPage>, ExtractionError> {
+                Ok(Vec::new())
+            }
+        }
+        let e = Arc::new(FCls {
+            kind: DocumentKind::Pdf,
+            pages: vec![],
+            err: None,
+        });
+        let s_info = DocumentsServer::new(
+            ClassifyDocumentUseCase::new(e.clone()),
+            PdfUseCase::new(
+                e.clone(),
+                Arc::new(FTextPages),
+                Arc::new(FRender),
+                Arc::new(FOcr),
+            ),
+            TextDocUseCase::new(e.clone(), Arc::new(FTextReader)),
+            SpreadsheetUseCase::new(e.clone(), Arc::new(FSheet)),
+            PresentationUseCase::new(e.clone(), Arc::new(FPres)),
+            CsvUseCase::new(e, Arc::new(FCsv)),
+        );
+        let info = s_info
+            .pdf_info(Parameters(PdfInfoParams {
+                path: "x".into(),
+                bytes: ok,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(info.is_error, Some(false));
+        let t = info.content[0].as_text().unwrap().text.clone();
+        assert!(t.contains("\"needs_ocr\""));
+        assert!(t.contains("\"page_index\": 1"));
+
+        // Exercise the local FTextPages::extract_pages body (returns empty).
+        let pages = FTextPages
+            .extract_pages(&Source::Bytes(vec![1]), &[0])
+            .unwrap();
+        assert!(pages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_with_some_range_uses_to_range() {
+        // Passing a page_from/page_to exercises the `to_range` Some branch.
+        let s = build(DocumentKind::Pdf, vec![], None);
+        let res = s
+            .pdf_extract_markdown(Parameters(PdfExtractParams {
+                path: "x".into(),
+                bytes: b64(b"x"),
+                page_from: Some(0),
+                page_to: Some(1),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(res.is_error, Some(false));
+    }
+
+    #[test]
+    fn coverage_fake_ports_are_exercised() {
+        // Cover the remaining fake port bodies in this module.
+        let bmp = PageBitmap::new(1, 1, 1, vec![0]).unwrap();
+        assert!(FOcr.ocr_page(&bmp).is_err());
+        assert!(FRender.render_page(b"x", 0, 72).is_err());
+
+        let src = Source::Bytes(vec![1]);
+        assert!(
+            FCls {
+                kind: DocumentKind::Csv,
+                pages: vec![],
+                err: None
+            }
+            .extract_text(&src)
+            .is_ok()
+        );
+        assert!(FText.extract_pages(&src, &[0]).is_ok());
+        assert!(FTextReader.text_info(&src).is_ok());
+        assert!(FSheet.spreadsheet_info(&src).is_ok());
+        assert!(FPres.presentation_info(&src).is_ok());
+        assert!(FCsv.csv_info(&src).is_ok());
     }
 }

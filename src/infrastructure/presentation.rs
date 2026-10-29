@@ -259,4 +259,53 @@ mod tests {
         unsafe { std::env::remove_var("MAX_DECOMPRESSED_BYTES") };
         assert!(matches!(err, ExtractionError::ResourceLimit(_)));
     }
+
+    #[test]
+    fn legacy_ppt_info_reports_one_slide() {
+        // Non-PPTX bytes route to the legacy .ppt whole-document unit.
+        let r = AnyDocPresentationReader::new(None);
+        let info = r
+            .presentation_info(&Source::Bytes(b"not a pptx zip".to_vec()))
+            .unwrap();
+        assert_eq!(info.slide_count, 1);
+    }
+
+    struct FakeExtractor;
+    impl crate::domain::ports::DocumentExtractor for FakeExtractor {
+        fn classify(
+            &self,
+            _s: &Source,
+        ) -> Result<crate::domain::document::Classification, ExtractionError> {
+            Err(ExtractionError::Unsupported(
+                crate::domain::document::DocumentKind::Unknown,
+            ))
+        }
+        fn extract_text(
+            &self,
+            _s: &Source,
+        ) -> Result<crate::domain::result::ExtractionResult, ExtractionError> {
+            Ok(crate::domain::result::ExtractionResult::markdown_only(
+                crate::domain::document::DocumentKind::Ppt,
+                None,
+                "legacy ppt markdown".into(),
+            ))
+        }
+    }
+
+    #[test]
+    fn legacy_ppt_extract_uses_injected_extractor() {
+        // The legacy .ppt branch uses the injected anydoc extractor (range ignored).
+        let r = AnyDocPresentationReader::new(Some(std::sync::Arc::new(FakeExtractor)));
+        let md = r
+            .extract_presentation(&Source::Bytes(b"binary ppt".to_vec()), Some(0..5))
+            .unwrap();
+        assert!(md.contains("legacy ppt markdown"));
+    }
+
+    #[test]
+    fn pptx_slide_count_rejects_bad_zip() {
+        let err =
+            AnyDocPresentationReader::pptx_slide_count(b"garbage bytes not a zip").unwrap_err();
+        assert!(matches!(err, ExtractionError::Malformed(_)));
+    }
 }

@@ -111,6 +111,7 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
 mod tests {
     use super::*;
     use mcp_documents::domain::result::PageBitmap;
+    use std::path::PathBuf;
 
     /// With OCR disabled (default build), the provider built at startup is a
     /// stub that reports OCR unavailable rather than panicking.
@@ -124,5 +125,37 @@ mod tests {
             err,
             mcp_documents::domain::error::ExtractionError::OcrUnavailable(_)
         ));
+    }
+
+    #[test]
+    fn validate_cli_path_serve_returns_ok() {
+        // `serve` has no path to gate — it must short-circuit to Ok.
+        assert!(validate_cli_path(&CliCommand::Serve).is_ok());
+    }
+
+    #[test]
+    fn validate_cli_path_rejects_missing_file() {
+        // A `classify` path that cannot be resolved must fail the shared source
+        // gate (ALLOW_ROOT_DIR + file existence).
+        let missing = format!(
+            "{}/definitely-missing-{}",
+            std::env::temp_dir().display(),
+            std::process::id()
+        );
+        let err = validate_cli_path(&CliCommand::Classify(PathBuf::from(&missing)));
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn validate_cli_path_accepts_existing_file_inside_root() {
+        let dir = std::env::temp_dir().join(format!("mcp-main-v-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("f.txt");
+        std::fs::write(&p, b"x").unwrap();
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
+        let res = validate_cli_path(&CliCommand::Extract(p.clone()));
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(res.is_ok());
     }
 }

@@ -186,4 +186,12 @@ mod tests {
         };
         assert_eq!(c.ocr_page_count(), 0);
     }
+
+    #[test]
+    fn pdf_type_as_str_covers_all_variants() {
+        assert_eq!(PdfType::TextBased.as_str(), "TextBased");
+        assert_eq!(PdfType::Scanned.as_str(), "Scanned");
+        assert_eq!(PdfType::ImageBased.as_str(), "ImageBased");
+        assert_eq!(PdfType::Mixed.as_str(), "Mixed");
+    }
 }

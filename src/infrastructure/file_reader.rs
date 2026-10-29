@@ -330,4 +330,39 @@ mod tests {
         unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn read_path_no_follow_enforces_size_cap() {
+        let _g = lock();
+        unsafe { std::env::set_var("MAX_INPUT_BYTES", "10") };
+        let dir = std::env::temp_dir().join(format!("mcp-readcap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("big.bin");
+        std::fs::write(&p, vec![0u8; 100]).unwrap();
+
+        // The read is capped at MAX_INPUT_BYTES+1; a file larger than the cap
+        // must be rejected as ResourceLimit by read_path_no_follow itself.
+        let err = read_path_no_follow(&p).unwrap_err();
+        unsafe { std::env::remove_var("MAX_INPUT_BYTES") };
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(err, ExtractionError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn validate_source_rejects_directory_as_not_regular_file() {
+        let _g = lock();
+        unsafe { std::env::set_var("MAX_INPUT_BYTES", "10000") };
+        let dir = std::env::temp_dir().join(format!("mcp-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
+
+        // A directory canonicalizes and opens fine, but its metadata is not a
+        // regular file -> "not a regular file".
+        let err = validate_source(&Source::Path(dir.clone())).unwrap_err();
+        unsafe { std::env::remove_var("MAX_INPUT_BYTES") };
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(err, ExtractionError::Io(_)));
+        assert!(err.to_string().contains("not a regular file"));
+    }
 }

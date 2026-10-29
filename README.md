@@ -20,7 +20,7 @@ Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts cle
     <img src="https://img.shields.io/github/license/teran/mcp-documents" alt="License">
   </a>
   <a href="https://github.com/teran/mcp-documents/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/badge/coverage-85%25%2B-green?logo=codecov" alt="Coverage">
+    <img src="https://img.shields.io/badge/coverage-95%25%2B-green?logo=codecov" alt="Coverage">
   </a>
   <a href="https://github.com/teran/mcp-documents">
     <img src="https://img.shields.io/github/languages/code-size/teran/mcp-documents" alt="Code Size">
@@ -41,7 +41,7 @@ Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts cle
 - 🗂️ **Ranges** — per-format ranges select a subset: PDF `page_range`, doc/docx/rtf `word_range`, xls/xlsx `sheet`+`row_range`, ppt/pptx `slide_range` (`.ppt` whole-doc only), csv `row_range`.
 - 🔌 **Pluggable architecture** — domain & application layers are decoupled from the MCP framework and the document libraries, making the OCR provider and even each extraction engine swappable.
 - 📦 **Single self-contained binary** — zero runtime system dependencies; OCR (vendored Tesseract) and PDF rendering are embedded/static so nothing needs to be installed at runtime. (The binary dynamically links glibc/libstdc++ only.)
-- 🧪 **Tested** — 85%+ line-coverage target enforced via `cargo llvm-cov` on a bare CI runner.
+- 🧪 **Tested** — 95%+ line-coverage target on the default build (85%+ on the `ocr-native` build) enforced via `cargo llvm-cov` on a bare CI runner.
 
 ---
 
@@ -199,6 +199,8 @@ The tool surface is **per-format**: one generic classifier plus, for each suppor
 
 **Common parameters:** every tool accepts a file **`path`** and optionally base64 **`bytes`** (used when the client passes the file content to the model; takes precedence over `path`). The `*_info` and `classify_document` tools return JSON; the `*_extract_markdown` tools return **Markdown only** — there are no plain-text tools. See [`SPEC.md`](./SPEC.md) §8.2 for details.
 
+**Annotations:** every tool is **read-only** (it only reads/parses the given document and never modifies its environment) and is declared with explicit per-tool Annotations (`readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`) plus a human-readable `title` and per-tool usage guidance in its description. See [`SPEC.md`](./SPEC.md) §8.2 (M04).
+
 ### Using documents with MCP clients (e.g. opencode)
 
 Text-only models cannot read PDF/binary attachments — opencode attaches the file on drag-and-drop / `[PDF]` reference, and the model rejects it (`this model does not support pdf input`). This is a **client-side** limitation (opencode issues #17205 / #42544; the fix is expected after v1.18.18). The reliable pattern is:
@@ -251,7 +253,7 @@ cargo clippy --all-targets -- -D warnings
 # test
 cargo test
 
-# coverage (≥ 85% line target on both default and `ocr-native` builds)
+# coverage (≥ 95% line target on the default build; ≥ 85% on `ocr-native`)
 cargo install cargo-llvm-cov        # once
 cargo llvm-cov --html
 cargo llvm-cov --features ocr-native --html
