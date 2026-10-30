@@ -1825,7 +1825,7 @@ dependencies = [
  "libc",
  "pdf-inspector",
  "pdf-render",
- "quick-xml 0.41.0",
+ "quick-xml 0.42.0",
  "rmcp",
  "schemars",
  "serde",

@@ -43,7 +43,7 @@ calamine = "0.37"
 # vulnerable SUID/symlink extraction bugs in the `zip` < 9 extraction API).
 zip = { version = "9", default-features = false }
 # Parsing slide XML (<a:t> text) when extracting PPTX slides.
-quick-xml = "0.41"
+quick-xml = "0.42"
 
 tokio = { version = "1", features = ["full"] }
 # Version ranges aligned with rmcp's re-exports so `rmcp::serde`/`rmcp::schemars`

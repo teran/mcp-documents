@@ -36,11 +36,12 @@ pub fn slide_xml_to_text(slide_xml: &str) -> Result<String, ExtractionError> {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Text(ref e)) => {
-                    if let Ok(text) = e.decode() {
-                        let s = text.trim();
-                        if !s.is_empty() {
-                            parts.push(s.to_string());
-                        }
+                    // quick-xml >= 0.42 ("String Ergonomics"): `BytesText` no
+                    // longer has `decode()`, it derefs to `&str` directly.
+                    let s: &str = e;
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        parts.push(s.to_string());
                     }
                 }
                 Ok(Event::Eof) => break,
