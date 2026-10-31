@@ -5,7 +5,7 @@
 # builds, dependency audits, and a Docker image build (WITHOUT pushing — the
 # image is pushed only on release tags, see release.yml).
 #
-# The project's MSRV is `1.88` (see Cargo.toml `rust-version`, edition 2024), so
+# The project's MSRV is `1.89` (see Cargo.toml `rust-version`, edition 2024), so
 # the `test` job runs a matrix of MSRV + latest stable.
 #
 # Commands mirror AGENTS.md / Makefile:
@@ -63,8 +63,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # MSRV (rust-version 1.88) + latest stable.
-        toolchain: [1.88, stable]
+        # MSRV (rust-version 1.89) + latest stable.
+        toolchain: [1.89, stable]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
