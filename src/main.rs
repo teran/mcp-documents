@@ -120,6 +120,13 @@ mod tests {
     use super::*;
     use mcp_documents::domain::result::PageBitmap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    /// Serializes the CLI-path tests that mutate the process-global
+    /// `ALLOW_ROOT_DIR` env var via `std::env::set_var`/`remove_var`. These run
+    /// concurrently in the same test binary, and `validate_cli_path` reads that
+    /// var; without this lock they race and intermittently fail.
+    static ALLOW_ROOT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     /// With OCR disabled (default build), the provider built at startup is a
     /// stub that reports OCR unavailable rather than panicking.
@@ -156,6 +163,7 @@ mod tests {
 
     #[test]
     fn validate_cli_path_accepts_existing_file_inside_root() {
+        let _guard = ALLOW_ROOT_DIR_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("mcp-main-v-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("f.txt");
@@ -169,6 +177,7 @@ mod tests {
 
     #[test]
     fn validate_cli_path_valid_classify_path_ok() {
+        let _guard = ALLOW_ROOT_DIR_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("mcp-main-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("a.txt");
