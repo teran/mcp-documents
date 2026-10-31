@@ -43,11 +43,17 @@ pub fn ocr_max_pages() -> usize {
 
 /// Read `OCR_CONCURRENCY`, defaulting to the number of CPU cores. Bounds the
 /// number of pages OCR'd in parallel per request (via a semaphore).
+///
+/// Always returns at least 1: a value of 0 (from env or the fallback) must
+/// never reach the OCR semaphore, where it would deadlock the pipeline.
 pub fn ocr_concurrency() -> usize {
     let from_env = env_usize("OCR_CONCURRENCY", 0);
     if from_env > 0 {
-        return from_env;
+        // Valid env override: clamp defensively so the early-return path can
+        // never yield 0 either.
+        return from_env.max(1);
     }
+    // 0/unset/invalid env: fall back to CPU count, never below 1.
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
@@ -100,16 +106,31 @@ pub fn expand_tilde(input: &str) -> PathBuf {
     PathBuf::from(trimmed)
 }
 
+/// The default root on Windows: the system drive root (e.g. `C:\`), reading
+/// `SystemDrive` from the environment.
+///
+/// `#[mutants::skip]`: this function compiles only when the target is Windows
+/// (it reads `SystemDrive`). The CI mutation gate runs on a non-Windows
+/// (default) build, where this code is not compiled, so the mutants over
+/// `!d.is_empty()` (removing the `!`, or forcing the guard to `false`/`true`)
+/// cannot be killed by tests on that platform. Skipping the whole function —
+/// rather than only the `let d = match ...` binding as before — prevents these
+/// match-guard mutants from surviving.
+#[cfg(windows)]
+#[mutants::skip]
+fn windows_default_root() -> PathBuf {
+    let d = match std::env::var("SystemDrive") {
+        Ok(d) if !d.is_empty() => format!("{d}\\"),
+        _ => "C:\\".into(),
+    };
+    PathBuf::from(d)
+}
+
 /// The default root(s) when `ALLOW_ROOT_DIR` is unset.
 fn default_roots() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
-        // System disk root, e.g. `C:\`.
-        let d = match std::env::var("SystemDrive") {
-            Ok(d) if !d.is_empty() => format!("{d}\\"),
-            _ => "C:\\".into(),
-        };
-        vec![PathBuf::from(d)]
+        vec![windows_default_root()]
     }
     #[cfg(not(windows))]
     {
@@ -295,6 +316,77 @@ mod tests {
 
         std::fs::remove_dir_all(&home).unwrap();
         remove_var("HOME");
+        remove_var("ALLOW_ROOT_DIR");
+    }
+
+    #[test]
+    fn ocr_concurrency_zero_env_still_returns_at_least_one() {
+        let _g = lock();
+        // A `0` (or unset) OCR_CONCURRENCY must never yield 0 — it would
+        // deadlock the OCR semaphore. Both the env-early-return and the
+        // CPU-count fallback paths must produce >= 1.
+        set_var("OCR_CONCURRENCY", "0");
+        assert!(ocr_concurrency() >= 1, "0 env must not produce 0");
+        remove_var("OCR_CONCURRENCY");
+        assert!(ocr_concurrency() >= 1, "unset env must not produce 0");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn default_root_falls_back_to_root_without_home() {
+        let _g = lock();
+        let home = std::env::var_os("HOME");
+        remove_var("ALLOW_ROOT_DIR");
+        unsafe { std::env::remove_var("HOME") };
+        assert_eq!(allowroot(), PathBuf::from("/"));
+        if let Some(h) = home {
+            unsafe { std::env::set_var("HOME", h) };
+        }
+    }
+
+    /// Kills the `* → +` / `* → /` mutants over the size constants
+    /// (`DEFAULT_MAX_INPUT_BYTES`, `DEFAULT_MAX_DECOMPRESSED_BYTES`). The
+    /// comparison uses the literal value (not the constant itself), otherwise a
+    /// mutation would change both sides in lockstep and the mutant would survive.
+    #[test]
+    fn default_size_constants_are_exact() {
+        assert_eq!(DEFAULT_MAX_INPUT_BYTES, 262_144_000); // 250 * 1024 * 1024
+        assert_eq!(DEFAULT_MAX_DECOMPRESSED_BYTES, 268_435_456); // 256 * 1024 * 1024
+    }
+
+    /// Kills the `home_dir -> Option<PathBuf>` → `None` mutant: set a known
+    /// `HOME` and assert that `expand_tilde` and the default root are actually
+    /// built from it. If `home_dir` returned `None`, `expand_tilde("~")` would
+    /// yield the literal `"~"` and the root would be `/`, failing both asserts.
+    #[cfg(not(windows))]
+    #[test]
+    fn home_dir_is_used_when_home_is_set() {
+        let _g = lock();
+        let prev = std::env::var_os("HOME");
+        let fake_home = PathBuf::from("/fake/home/mcp-documents");
+        unsafe { std::env::set_var("HOME", &fake_home) };
+        remove_var("ALLOW_ROOT_DIR");
+
+        assert_eq!(expand_tilde("~"), fake_home);
+        assert_eq!(expand_tilde("~/Documents"), fake_home.join("Documents"));
+        assert_eq!(allowroot(), fake_home.join("Documents"));
+
+        match prev {
+            Some(h) => unsafe { std::env::set_var("HOME", h) },
+            None => unsafe { std::env::remove_var("HOME") },
+        }
+    }
+
+    /// Kills the `!v.trim().is_empty()` → `true` mutant in `allowroots`: an
+    /// empty/whitespace `ALLOW_ROOT_DIR` must fall back to the default roots (one
+    /// element), not yield an empty list after split/filter.
+    #[test]
+    fn allowroots_empty_env_falls_back_to_default() {
+        let _g = lock();
+        set_var("ALLOW_ROOT_DIR", "   ");
+        let roots = allowroots();
+        // The default root is always exactly one element (not an empty list).
+        assert_eq!(roots.len(), 1);
         remove_var("ALLOW_ROOT_DIR");
     }
 }

@@ -60,6 +60,13 @@ libc = "0.2"
 # supply-chain guard. Infrastructure-only.
 sha2 = "0.11"
 
+# Provides the `#[mutants::skip]` attribute used to exempt platform-gated or
+# behaviorally-equivalent code from the cargo-mutants mutation gate. Must be a
+# REGULAR dependency (not dev): the attribute annotates non-test code, so it
+# must resolve during plain `cargo build` (e.g. the Docker ocr-native build).
+# The attribute expands to nothing at runtime.
+mutants = "0.0.4"
+
 # OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
 tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }
 

@@ -98,7 +98,15 @@ fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send 
 
 /// Select the OCR provider when `ocr-native` is enabled. Fails fast at startup
 /// if the engine cannot be initialized.
+///
+/// `#[mutants::skip]`: this function compiles only when the `ocr-native` feature
+/// is enabled. The CI mutation gate runs on the default (non-`ocr-native`)
+/// build, where this function is not compiled, so a mutant replacing its whole
+/// body with `Ok(Arc::new(Default::default()))` cannot be killed by tests in
+/// that context. The non-native `build_ocr` remains covered by its own test
+/// below.
 #[cfg(feature = "ocr-native")]
+#[mutants::skip]
 fn build_ocr() -> Result<Arc<dyn OcrProvider>, Box<dyn std::error::Error + Send + Sync>> {
     mcp_documents::infrastructure::make_ocr().map_err(|e| {
         Box::<dyn std::error::Error + Send + Sync>::from(format!(
@@ -112,6 +120,13 @@ mod tests {
     use super::*;
     use mcp_documents::domain::result::PageBitmap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    /// Serializes the CLI-path tests that mutate the process-global
+    /// `ALLOW_ROOT_DIR` env var via `std::env::set_var`/`remove_var`. These run
+    /// concurrently in the same test binary, and `validate_cli_path` reads that
+    /// var; without this lock they race and intermittently fail.
+    static ALLOW_ROOT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     /// With OCR disabled (default build), the provider built at startup is a
     /// stub that reports OCR unavailable rather than panicking.
@@ -148,6 +163,7 @@ mod tests {
 
     #[test]
     fn validate_cli_path_accepts_existing_file_inside_root() {
+        let _guard = ALLOW_ROOT_DIR_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("mcp-main-v-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("f.txt");
@@ -157,5 +173,18 @@ mod tests {
         unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_cli_path_valid_classify_path_ok() {
+        let _guard = ALLOW_ROOT_DIR_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("mcp-main-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.txt");
+        std::fs::write(&p, b"hi").unwrap();
+        unsafe { std::env::set_var("ALLOW_ROOT_DIR", &dir) };
+        assert!(validate_cli_path(&CliCommand::Classify(p.clone())).is_ok());
+        unsafe { std::env::remove_var("ALLOW_ROOT_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
