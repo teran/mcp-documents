@@ -11,7 +11,7 @@ Built in **Rust** with a **Domain-Driven / Clean Architecture**, it extracts cle
     <img src="https://img.shields.io/github/actions/workflow/status/teran/mcp-documents/ci.yml?branch=master&label=CI&logo=github" alt="CI">
   </a>
   <a href="https://www.rust-lang.org/">
-    <img src="https://img.shields.io/badge/Rust-1.88%2B-orange?logo=rust" alt="Rust">
+    <img src="https://img.shields.io/badge/Rust-1.89%2B-orange?logo=rust" alt="Rust">
   </a>
   <a href="https://github.com/teran/mcp-documents/releases">
     <img src="https://img.shields.io/github/v/release/teran/mcp-documents?logo=github&label=release" alt="Latest Release">

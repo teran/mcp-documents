@@ -2,7 +2,7 @@
 name = "mcp-documents"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "An MCP server that extracts clean text and Markdown from documents (PDF with OCR for scanned pages, plus MS Office / ODF / RTF / EPUB / CSV)."
 license = "Apache-2.0"
 readme = "README.md"
