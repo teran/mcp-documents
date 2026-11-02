@@ -23,6 +23,10 @@ use mcp_documents::interface::{DocumentsServer, run_cli, serve_stdio};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Initialize logging first (B05 banner is the first line when enabled).
+    // Best-effort: a logging failure must not prevent the server from running.
+    let _ = mcp_documents::logging::init();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // Build the application use cases with the concrete adapters.

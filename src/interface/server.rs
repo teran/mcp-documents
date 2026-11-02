@@ -82,25 +82,29 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<ClassifyParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
-            Ok(s) => s,
-            Err(e) => return Ok(tool_error(&e)),
-        };
-        match self.classify.classify(&source) {
-            Ok(c) => Ok(json_result(rmcp::serde_json::json!({
-                "kind": c.kind.as_str(),
-                "pdf_type": c.pdf_type.map(|t| t.as_str()),
-                "pages_needing_ocr": c.pages_needing_ocr
-                    .iter()
-                    .map(|p| rmcp::serde_json::json!({
-                        "page_index": p.page_index,
-                        "needs_ocr": p.needs_ocr,
-                        "confidence": p.confidence,
-                    }))
-                    .collect::<Vec<_>>(),
-            }))),
-            Err(e) => Ok(tool_error(&e)),
-        }
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("classify_document", args, || async move {
+            let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+                Ok(s) => s,
+                Err(e) => return Ok(tool_error(&e)),
+            };
+            match self.classify.classify(&source) {
+                Ok(c) => Ok(json_result(rmcp::serde_json::json!({
+                    "kind": c.kind.as_str(),
+                    "pdf_type": c.pdf_type.map(|t| t.as_str()),
+                    "pages_needing_ocr": c.pages_needing_ocr
+                        .iter()
+                        .map(|p| rmcp::serde_json::json!({
+                            "page_index": p.page_index,
+                            "needs_ocr": p.needs_ocr,
+                            "confidence": p.confidence,
+                        }))
+                        .collect::<Vec<_>>(),
+                }))),
+                Err(e) => Ok(tool_error(&e)),
+            }
+        })
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -123,25 +127,29 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PdfInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
-            Ok(s) => s,
-            Err(e) => return Ok(tool_error(&e)),
-        };
-        match self.pdf.info(&source) {
-            Ok(info) => Ok(json_result(rmcp::serde_json::json!({
-                "kind": "pdf",
-                "page_count": info.page_count,
-                "pdf_type": info.pdf_type.as_str(),
-                "pages_needing_ocr": info.pages_needing_ocr
-                    .iter()
-                    .map(|p| rmcp::serde_json::json!({
-                        "page_index": p.page_index,
-                        "needs_ocr": p.needs_ocr,
-                    }))
-                    .collect::<Vec<_>>(),
-            }))),
-            Err(e) => Ok(tool_error(&e)),
-        }
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("pdf_info", args, || async move {
+            let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+                Ok(s) => s,
+                Err(e) => return Ok(tool_error(&e)),
+            };
+            match self.pdf.info(&source) {
+                Ok(info) => Ok(json_result(rmcp::serde_json::json!({
+                    "kind": "pdf",
+                    "page_count": info.page_count,
+                    "pdf_type": info.pdf_type.as_str(),
+                    "pages_needing_ocr": info.pages_needing_ocr
+                        .iter()
+                        .map(|p| rmcp::serde_json::json!({
+                            "page_index": p.page_index,
+                            "needs_ocr": p.needs_ocr,
+                        }))
+                        .collect::<Vec<_>>(),
+                }))),
+                Err(e) => Ok(tool_error(&e)),
+            }
+        })
+        .await
     }
 
     /// Extract a PDF as Markdown. Scanned pages are OCR'd; the optional
@@ -160,15 +168,19 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PdfExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
-            Ok(s) => s,
-            Err(e) => return Ok(tool_error(&e)),
-        };
-        let range = to_range(params.page_from, params.page_to);
-        match self.pdf.extract_markdown(&source, range).await {
-            Ok(result) => Ok(text_result(result.markdown)),
-            Err(e) => Ok(tool_error(&e)),
-        }
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("pdf_extract_markdown", args, || async move {
+            let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+                Ok(s) => s,
+                Err(e) => return Ok(tool_error(&e)),
+            };
+            let range = to_range(params.page_from, params.page_to);
+            match self.pdf.extract_markdown(&source, range).await {
+                Ok(result) => Ok(text_result(result.markdown)),
+                Err(e) => Ok(tool_error(&e)),
+            }
+        })
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -190,7 +202,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_info(&params, DocumentKind::Doc).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("doc_info", args, || async move {
+            self.text_info(&params, DocumentKind::Doc).await
+        })
+        .await
     }
 
     /// Extract a `.doc` as Markdown; optional `word_from`/`word_to` (0-based,
@@ -209,7 +225,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_extract(&params, DocumentKind::Doc).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("doc_extract_markdown", args, || async move {
+            self.text_extract(&params, DocumentKind::Doc).await
+        })
+        .await
     }
 
     /// Word count and character count for a `.docx`.
@@ -227,7 +247,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_info(&params, DocumentKind::Docx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("docx_info", args, || async move {
+            self.text_info(&params, DocumentKind::Docx).await
+        })
+        .await
     }
 
     /// Extract a `.docx` as Markdown; optional `word_from`/`word_to` (0-based,
@@ -246,7 +270,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_extract(&params, DocumentKind::Docx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("docx_extract_markdown", args, || async move {
+            self.text_extract(&params, DocumentKind::Docx).await
+        })
+        .await
     }
 
     /// Word count and character count for an RTF document.
@@ -264,7 +292,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_info(&params, DocumentKind::Rtf).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("rtf_info", args, || async move {
+            self.text_info(&params, DocumentKind::Rtf).await
+        })
+        .await
     }
 
     /// Extract an RTF document as Markdown; optional `word_from`/`word_to`
@@ -283,7 +315,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<TextExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.text_extract(&params, DocumentKind::Rtf).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("rtf_extract_markdown", args, || async move {
+            self.text_extract(&params, DocumentKind::Rtf).await
+        })
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -305,7 +341,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.spreadsheet_info(&params, DocumentKind::Xls).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("xls_info", args, || async move {
+            self.spreadsheet_info(&params, DocumentKind::Xls).await
+        })
+        .await
     }
 
     /// Extract a `.xls` sheet as a Markdown table; optional `sheet` name and
@@ -324,7 +364,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<SpreadsheetExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.spreadsheet_extract(&params, DocumentKind::Xls).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("xls_extract_markdown", args, || async move {
+            self.spreadsheet_extract(&params, DocumentKind::Xls).await
+        })
+        .await
     }
 
     /// List the sheets (with row/col counts) of a `.xlsx` workbook.
@@ -342,7 +386,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<SpreadsheetInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.spreadsheet_info(&params, DocumentKind::Xlsx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("xlsx_info", args, || async move {
+            self.spreadsheet_info(&params, DocumentKind::Xlsx).await
+        })
+        .await
     }
 
     /// Extract a `.xlsx` sheet as a Markdown table; optional `sheet` name and
@@ -361,7 +409,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<SpreadsheetExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.spreadsheet_extract(&params, DocumentKind::Xlsx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("xlsx_extract_markdown", args, || async move {
+            self.spreadsheet_extract(&params, DocumentKind::Xlsx).await
+        })
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -383,7 +435,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.presentation_info(&params, DocumentKind::Ppt).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("ppt_info", args, || async move {
+            self.presentation_info(&params, DocumentKind::Ppt).await
+        })
+        .await
     }
 
     /// Extract a `.ppt` as Markdown (whole document; `slide_from`/`slide_to`
@@ -402,7 +458,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PresentationExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.presentation_extract(&params, DocumentKind::Ppt).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("ppt_extract_markdown", args, || async move {
+            self.presentation_extract(&params, DocumentKind::Ppt).await
+        })
+        .await
     }
 
     /// Slide count for a `.pptx` presentation.
@@ -420,7 +480,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PresentationInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.presentation_info(&params, DocumentKind::Pptx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("pptx_info", args, || async move {
+            self.presentation_info(&params, DocumentKind::Pptx).await
+        })
+        .await
     }
 
     /// Extract a `.pptx` as Markdown; optional `slide_from`/`slide_to`
@@ -439,7 +503,11 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<PresentationExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.presentation_extract(&params, DocumentKind::Pptx).await
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("pptx_extract_markdown", args, || async move {
+            self.presentation_extract(&params, DocumentKind::Pptx).await
+        })
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -462,19 +530,23 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<CsvInfoParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
-            Ok(s) => s,
-            Err(e) => return Ok(tool_error(&e)),
-        };
-        match self.csv.info(&source) {
-            Ok(info) => Ok(json_result(rmcp::serde_json::json!({
-                "kind": "csv",
-                "row_count": info.row_count,
-                "column_count": info.column_count,
-                "header": info.header,
-            }))),
-            Err(e) => Ok(tool_error(&e)),
-        }
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("csv_info", args, || async move {
+            let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+                Ok(s) => s,
+                Err(e) => return Ok(tool_error(&e)),
+            };
+            match self.csv.info(&source) {
+                Ok(info) => Ok(json_result(rmcp::serde_json::json!({
+                    "kind": "csv",
+                    "row_count": info.row_count,
+                    "column_count": info.column_count,
+                    "header": info.header,
+                }))),
+                Err(e) => Ok(tool_error(&e)),
+            }
+        })
+        .await
     }
 
     /// Extract a CSV as a Markdown table (streaming); optional
@@ -494,15 +566,19 @@ impl DocumentsServer {
         &self,
         Parameters(params): Parameters<CsvExtractParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let source = match source_from_params(&params.path, params.bytes.as_deref()) {
-            Ok(s) => s,
-            Err(e) => return Ok(tool_error(&e)),
-        };
-        let range = to_range(params.row_from, params.row_to);
-        match self.csv.extract_markdown(&source, range) {
-            Ok(result) => Ok(text_result(result.markdown)),
-            Err(e) => Ok(tool_error(&e)),
-        }
+        let args = redacted_args(&params.path, params.bytes.as_deref());
+        self.access_logged("csv_extract_markdown", args, || async move {
+            let source = match source_from_params(&params.path, params.bytes.as_deref()) {
+                Ok(s) => s,
+                Err(e) => return Ok(tool_error(&e)),
+            };
+            let range = to_range(params.row_from, params.row_to);
+            match self.csv.extract_markdown(&source, range) {
+                Ok(result) => Ok(text_result(result.markdown)),
+                Err(e) => Ok(tool_error(&e)),
+            }
+        })
+        .await
     }
 }
 
@@ -636,6 +712,89 @@ fn to_range(from: Option<usize>, to: Option<usize>) -> Option<Range<usize>> {
     }
 }
 
+impl DocumentsServer {
+    /// Wrap a tool handler with per-request access logging (L08/L09): records
+    /// the start, runs the handler, then logs the outcome + duration. Emits
+    /// nothing when logging is disabled (no `tracing` subscriber installed).
+    async fn access_logged<F, Fut>(
+        &self,
+        tool: &str,
+        args: rmcp::serde_json::Value,
+        f: F,
+    ) -> Result<CallToolResult, ErrorData>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<CallToolResult, ErrorData>>,
+    {
+        let source = "STDIO";
+        let request_id = crate::logging::next_request_id();
+        let args_str = args.to_string();
+        crate::logging::log_tool_call_start(tool, &args_str, source, request_id);
+        let start = std::time::Instant::now();
+        let result = f().await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let outcome = if result.is_ok() { "ok" } else { "error" };
+        crate::logging::log_tool_call_end(
+            tool,
+            &args_str,
+            source,
+            request_id,
+            duration_ms,
+            outcome,
+        );
+        result
+    }
+
+    /// Enumerate the registered (static) tool surface — `(name, title)` pairs —
+    /// for the startup tool-surface log (L10/L11). All tools here are static
+    /// (always part of `tools/list`), so each carries `always_present: true`.
+    pub fn tool_surface(&self) -> Vec<(String, String)> {
+        let tools = [
+            Self::classify_document_tool_attr(),
+            Self::pdf_info_tool_attr(),
+            Self::pdf_extract_markdown_tool_attr(),
+            Self::doc_info_tool_attr(),
+            Self::doc_extract_markdown_tool_attr(),
+            Self::docx_info_tool_attr(),
+            Self::docx_extract_markdown_tool_attr(),
+            Self::rtf_info_tool_attr(),
+            Self::rtf_extract_markdown_tool_attr(),
+            Self::xls_info_tool_attr(),
+            Self::xls_extract_markdown_tool_attr(),
+            Self::xlsx_info_tool_attr(),
+            Self::xlsx_extract_markdown_tool_attr(),
+            Self::ppt_info_tool_attr(),
+            Self::ppt_extract_markdown_tool_attr(),
+            Self::pptx_info_tool_attr(),
+            Self::pptx_extract_markdown_tool_attr(),
+            Self::csv_info_tool_attr(),
+            Self::csv_extract_markdown_tool_attr(),
+        ];
+        tools
+            .into_iter()
+            .map(|t| {
+                let title = t
+                    .annotations
+                    .as_ref()
+                    .and_then(|a| a.title.clone())
+                    .unwrap_or_default();
+                (t.name.to_string(), title)
+            })
+            .collect()
+    }
+}
+
+/// Build a redacted args value for the access log: logs the (non-secret)
+/// `path` and only the *presence/length* of the base64 `bytes` — never the
+/// bytes content itself (L05).
+fn redacted_args(path: &str, bytes: Option<&str>) -> rmcp::serde_json::Value {
+    rmcp::serde_json::json!({
+        "path": path,
+        "bytes_present": bytes.is_some(),
+        "bytes_len": bytes.map(str::len),
+    })
+}
+
 #[tool_handler(
     router = self.tool_router,
     instructions = "You cannot read PDF or Office document files directly — the model does not support binary/PDF input. When the user asks to read a document, ALWAYS call one of this server's tools with the file `path` instead of opening or parsing the file yourself. Use `classify_document` to detect the format of an unknown file, then the matching `<format>_info` / `<format>_extract_markdown` tool: `pdf_info`/`pdf_extract_markdown`, `doc_info`/`doc_extract_markdown`, `docx_info`/`docx_extract_markdown`, `rtf_info`/`rtf_extract_markdown`, `xls_info`/`xls_extract_markdown`, `xlsx_info`/`xlsx_extract_markdown`, `ppt_info`/`ppt_extract_markdown`, `pptx_info`/`pptx_extract_markdown`, `csv_info`/`csv_extract_markdown`. Output is always Markdown. Never attempt to read the raw attachment or file bytes."
@@ -648,6 +807,10 @@ pub async fn serve_stdio(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use rmcp::ServiceExt;
     use rmcp::transport::stdio;
+
+    // Log the registered tool surface at startup (L10/L11/N45). This is a no-op
+    // when logging is disabled (no subscriber installed).
+    crate::logging::log_tool_surface(&server.tool_surface());
 
     let running = server.serve(stdio()).await?;
     running.waiting().await?;
@@ -914,6 +1077,74 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn access_logged_logs_error_outcome_on_protocol_error() {
+        // Cover the `error` outcome branch of the access-log wrapper: a handler
+        // returning `Err(ErrorData)` (a protocol error) is still logged.
+        let s = server(DocumentKind::Pdf);
+        let result = s
+            .access_logged("pdf_info", redacted_args("/tmp/f.pdf", None), || async {
+                Err(ErrorData::internal_error("boom", None))
+            })
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn redacted_args_never_logs_bytes_content() {
+        let secret = "aGVsbG8gd29ybGQ="; // base64 of "hello world"
+        let args = redacted_args("/tmp/f.pdf", Some(secret));
+        let s = args.to_string();
+        assert!(s.contains("\"path\":\"/tmp/f.pdf\""), "got: {s}");
+        assert!(s.contains("\"bytes_present\":true"), "got: {s}");
+        assert!(
+            !s.contains("hello world"),
+            "bytes content leaked into args: {s}"
+        );
+        assert_eq!(args["bytes_len"], rmcp::serde_json::json!(secret.len()));
+
+        let no_bytes = redacted_args("/tmp/f.pdf", None);
+        assert_eq!(no_bytes["bytes_present"], rmcp::serde_json::json!(false));
+        assert_eq!(no_bytes["bytes_len"], rmcp::serde_json::Value::Null);
+    }
+
+    #[test]
+    fn tool_surface_enumerates_all_static_tools() {
+        let s = server(DocumentKind::Pdf);
+        let surface = s.tool_surface();
+        assert_eq!(surface.len(), 19, "all 19 tools must be enumerated");
+        let expected = [
+            "classify_document",
+            "pdf_info",
+            "pdf_extract_markdown",
+            "doc_info",
+            "doc_extract_markdown",
+            "docx_info",
+            "docx_extract_markdown",
+            "rtf_info",
+            "rtf_extract_markdown",
+            "xls_info",
+            "xls_extract_markdown",
+            "xlsx_info",
+            "xlsx_extract_markdown",
+            "ppt_info",
+            "ppt_extract_markdown",
+            "pptx_info",
+            "pptx_extract_markdown",
+            "csv_info",
+            "csv_extract_markdown",
+        ];
+        let names: Vec<&str> = surface.iter().map(|(n, _)| n.as_str()).collect();
+        for n in expected {
+            assert!(names.contains(&n), "missing tool in surface: {n}");
+        }
+        // Every tool carries a non-empty human-readable title (used in L10).
+        assert!(
+            surface.iter().all(|(_, t)| !t.is_empty()),
+            "every tool must have a title"
+        );
     }
 
     #[test]

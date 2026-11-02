@@ -60,6 +60,12 @@ libc = "0.2"
 # supply-chain guard. Infrastructure-only.
 sha2 = "0.11"
 
+# Process-level logging (stdio-only server → logs to a file, never stdout).
+# `tracing` is already in the tree (rmcp depends on it); installing a global
+# `tracing` subscriber also captures rmcp's internal SDK events (L07).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
 # OCR (vendored Tesseract+Leptonica). Optional — only built with `ocr-native`.
 tesseract-rs = { version = "0.4.0", features = ["embed-tessdata"], optional = true }
 
