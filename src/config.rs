@@ -6,6 +6,7 @@
 //! `ALLOW_ROOT_DIR`, `MAX_RETURN_CHARS`).
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Global lock serializing tests that mutate process-wide env vars.
 ///
@@ -29,6 +30,50 @@ pub const DEFAULT_MAX_RETURN_CHARS: usize = 50_000_000;
 
 /// Default maximum decompressed bytes for a single archive member (256 MiB).
 pub const DEFAULT_MAX_DECOMPRESSED_BYTES: usize = 256 * 1024 * 1024;
+
+/// Default log file name when `LOG_FILENAME` is unset.
+pub const DEFAULT_LOG_FILENAME: &str = "mcp-documents.log";
+
+/// Log output format, from `LOG_FORMAT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LogFormat {
+    /// Human-readable text (default).
+    #[default]
+    Text,
+    /// Structured JSON lines (`LOG_FORMAT=json`).
+    Json,
+}
+
+/// Read `LOG_LEVEL` and parse it into a `tracing::Level`.
+///
+/// This server is **stdio-only**, so logging is enabled **only when
+/// `LOG_LEVEL` is set** (L02): an unset/empty value returns `None` (logging
+/// disabled); an unparseable value also returns `None`.
+pub fn log_level() -> Option<tracing::Level> {
+    let raw = std::env::var("LOG_LEVEL").ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    tracing::Level::from_str(trimmed).ok()
+}
+
+/// Read `LOG_FILENAME`, defaulting to [`DEFAULT_LOG_FILENAME`] (L03).
+pub fn log_filename() -> String {
+    match std::env::var("LOG_FILENAME") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => DEFAULT_LOG_FILENAME.to_string(),
+    }
+}
+
+/// Read `LOG_FORMAT`: `json` (case-insensitive) selects [`LogFormat::Json`],
+/// anything else defaults to [`LogFormat::Text`] (L04).
+pub fn log_format() -> LogFormat {
+    match std::env::var("LOG_FORMAT") {
+        Ok(v) if v.trim().eq_ignore_ascii_case("json") => LogFormat::Json,
+        _ => LogFormat::Text,
+    }
+}
 
 /// Read `MAX_INPUT_BYTES` (bytes), defaulting to 250 MiB. Enforced **before**
 /// base64 decode and before/while reading a path file.
@@ -275,6 +320,66 @@ mod tests {
         set_var("OCR_MAX_PAGES", "not-a-number");
         assert_eq!(ocr_max_pages(), DEFAULT_OCR_MAX_PAGES);
         remove_var("OCR_MAX_PAGES");
+    }
+
+    #[test]
+    fn log_level_unset_or_empty_disables_logging() {
+        let _g = lock();
+        remove_var("LOG_LEVEL");
+        assert_eq!(log_level(), None);
+        set_var("LOG_LEVEL", "   ");
+        assert_eq!(log_level(), None);
+        remove_var("LOG_LEVEL");
+    }
+
+    #[test]
+    fn log_level_parses_valid_levels() {
+        let _g = lock();
+        set_var("LOG_LEVEL", "debug");
+        assert_eq!(log_level(), Some(tracing::Level::DEBUG));
+        set_var("LOG_LEVEL", "INFO");
+        assert_eq!(log_level(), Some(tracing::Level::INFO));
+        set_var("LOG_LEVEL", "trace");
+        assert_eq!(log_level(), Some(tracing::Level::TRACE));
+        set_var("LOG_LEVEL", "warn");
+        assert_eq!(log_level(), Some(tracing::Level::WARN));
+        set_var("LOG_LEVEL", "ERROR");
+        assert_eq!(log_level(), Some(tracing::Level::ERROR));
+        remove_var("LOG_LEVEL");
+    }
+
+    #[test]
+    fn log_level_invalid_value_disables_logging() {
+        let _g = lock();
+        set_var("LOG_LEVEL", "verbose");
+        assert_eq!(log_level(), None);
+        remove_var("LOG_LEVEL");
+    }
+
+    #[test]
+    fn log_filename_defaults_and_overrides() {
+        let _g = lock();
+        remove_var("LOG_FILENAME");
+        assert_eq!(log_filename(), DEFAULT_LOG_FILENAME);
+        set_var("LOG_FILENAME", "");
+        assert_eq!(log_filename(), DEFAULT_LOG_FILENAME);
+        set_var("LOG_FILENAME", "/tmp/custom.log");
+        assert_eq!(log_filename(), "/tmp/custom.log");
+        remove_var("LOG_FILENAME");
+    }
+
+    #[test]
+    fn log_format_defaults_to_text_and_json_override() {
+        let _g = lock();
+        remove_var("LOG_FORMAT");
+        assert_eq!(log_format(), LogFormat::Text);
+        set_var("LOG_FORMAT", "text");
+        assert_eq!(log_format(), LogFormat::Text);
+        set_var("LOG_FORMAT", "json");
+        assert_eq!(log_format(), LogFormat::Json);
+        set_var("LOG_FORMAT", "JSON");
+        assert_eq!(log_format(), LogFormat::Json);
+        remove_var("LOG_FORMAT");
     }
 
     #[test]
