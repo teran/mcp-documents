@@ -2,17 +2,24 @@
 # `.cargo/audit.toml`; cargo-audit 0.22 discovers `./.cargo/audit.toml` first,
 # then `~/.cargo/audit.toml` — it does NOT read a repo-root `audit.toml`).
 #
-# TARGETED ignores for the zip 8.6.0 residual (RUSTSEC-2026-0367/0368/0369) —
-# deliberately NOT a blanket `ignore = "RUSTSEC-*"`. See the equivalent comment
-# in deny.toml: our own direct `zip` dep and `calamine` are on zip 9.0.5, but
-# `anydoc` (runtime) and `tesseract-rs` (build) still pin zip ^8.6.0 with no
-# zip-9 upstream release as of 2026-10. Fixed-don't-suppress: we fixed
-# everything that had a safe upgrade; this residual is tracked and must be
-# re-checked when anydoc/tesseract-rs move to zip >= 9 (or are forked).
+# TARGETED ignores for the zip 8.6.0 residual — deliberately NOT a blanket
+# `ignore = "RUSTSEC-*"`. See the equivalent comment in deny.toml: our own
+# direct `zip` dep and `calamine` are on zip 9.1.3, but `anydoc` (runtime) and
+# `tesseract-rs` (build) still pin zip ^8.6.0 with no zip-9 upstream release as
+# of 2026-11. Fixed-don't-suppress: we fixed everything that had a safe
+# upgrade; this residual is tracked and must be re-checked when
+# anydoc/tesseract-rs move to zip >= 9 (or are forked).
+#
+# RUSTSEC-2026-0429 (zip 8.6.0): `ZipArchive::extract` aborts on a symlink
+# entry. The vulnerable `extract()` API is NOT used by our PPTX code — we read
+# archive members via `by_name`/`by_index` into memory under a decompression
+# cap. No upstream fix exists for 8.6.0 (transitively pinned by anydoc and
+# tesseract-rs); see the long deny.toml comment for the full rationale.
 
 [advisories]
 ignore = [
   "RUSTSEC-2026-0367",
   "RUSTSEC-2026-0368",
   "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
 ]

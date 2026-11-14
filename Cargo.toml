@@ -37,7 +37,9 @@ pdf-inspector = "1.17.0"
 # Streaming CSV parsing (memory < file size) for the dedicated CSV adapter.
 csv = "1.4"
 # Reading .xls/.xlsx workbooks (sheet listing + sheet/row extraction).
-calamine = "0.37"
+# 0.38.0 fixes RUSTSEC-2026-0436 (panic + unbounded allocation in the CFB/OLE2
+# parser); also adds worksheet_style()/workbook_properties() (additive).
+calamine = "0.38.0"
 # Reading PPTX slide parts (OOXML zip members) for slide count + ranges.
 # Version 9 is required to stay clear of RUSTSEC-2026-0367/0368/0369 (the
 # vulnerable SUID/symlink extraction bugs in the `zip` < 9 extraction API).
