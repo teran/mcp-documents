@@ -30,7 +30,7 @@ rmcp = { version = "3.1.4", features = ["server", "transport-io"] }
 # Document -> Markdown engine (PDF via pdf-inspector internally).
 anydoc = "0.2.4"
 # Pure-Rust PDF page -> image rasterizer (no native deps).
-pdf-render = "1.0.0-beta.18"
+pdf-render = "2.0.1"
 # Per-page PDF text extraction + per-page classification (real TextBased/
 # Scanned/ImageBased/Mixed + page ranges). Used directly for the PDF path.
 pdf-inspector = "1.17.0"

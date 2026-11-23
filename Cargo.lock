@@ -1024,6 +1024,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "font-types"
+version = "0.12.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "835ae9d781464a79026cde387f9cbc650c9a4909d7cf7e658b127e3c35d2f35d"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2123,13 +2132,21 @@ checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pdf-font"
-version = "1.0.0-beta.6"
+version = "1.0.0-beta.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f75daa5dc448b936db410d4033d4da6118175bb71d30189c3048d2a38633d2e6"
+checksum = "bb6093782f226a7be8ea64617e7e84e2ee9b0417f2fc24f5e117c414a1862ee8"
 dependencies = [
+ "bitflags 2.13.1",
  "brotli",
+ "kurbo",
  "log",
+ "pdf-render-types",
+ "pdf-syntax",
  "phf",
+ "rustc-hash",
+ "siphasher",
+ "skrifa 0.49.0",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -2153,49 +2170,57 @@ dependencies = [
 
 [[package]]
 name = "pdf-interpret"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0fcadef362f4a166e54c20ff96b0722406a616d3d3588bfb7d275569590b78d"
+checksum = "b9eff2ea211fde98a0508833fa62d7ca4a81aa9bd5bb60d81067e5ce2f87589a"
 dependencies = [
  "bitflags 2.13.1",
  "kurbo",
  "log",
- "moxcms 0.7.11",
+ "moxcms 0.8.1",
  "pdf-font",
  "pdf-syntax",
- "phf",
  "rustc-hash",
  "siphasher",
- "skrifa",
  "smallvec",
- "ttf-parser",
- "yoke",
 ]
 
 [[package]]
 name = "pdf-render"
-version = "1.3.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c49fe60fe9408b8b7f4aacb2e0647e6c36e0c8335de73f8446033bff37659805"
+checksum = "9cbdd43a0fe3b3f378aee54824124ebb40e1bdef3ac722d0d368dbfd59742b42"
 dependencies = [
  "bytemuck",
  "fast_image_resize",
  "image",
  "kurbo",
  "pdf-interpret",
+ "pdf-render-types",
  "rayon",
  "vello_cpu",
 ]
 
 [[package]]
-name = "pdf-syntax"
-version = "0.6.2"
+name = "pdf-render-types"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41207cfcbd17b6a70c6e78275e835e40358e8feb27b88af49edfb6dae93d66fe"
+checksum = "9d9428af7e3c5650cd727cd411dc12ca7ebff0dee87a04550d97cc84f5a5fd5c"
+dependencies = [
+ "phf",
+]
+
+[[package]]
+name = "pdf-syntax"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf97fd37696b1ec967fcf4b793b51d3de992ea3bda1a1a389745f876506424fa"
 dependencies = [
  "aes 0.8.4",
  "flate2",
  "log",
+ "memchr",
+ "pdf-render-types",
  "pdfluent-ccitt",
  "pdfluent-jbig2",
  "pdfluent-jpeg2000",
@@ -2206,15 +2231,15 @@ dependencies = [
 
 [[package]]
 name = "pdfluent-ccitt"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb3de3b72a77b44f9cc9afdbfe6e7fe63d02cc7965e7828a6803bf732f2745fa"
+checksum = "3ff3510cf21bd97654d8598cf18e6a95aa7cb72ec1c38bb06dbc252240d23abf"
 
 [[package]]
 name = "pdfluent-jbig2"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b28a49ee0c9fd4b2379499b332e676bf420cefd7249ca9e8865173cab54e9795"
+checksum = "a7e73015eb335447c201d30cee1c0a5c4e8912250c6ef85846364b73cdbe396e"
 dependencies = [
  "pdfluent-ccitt",
 ]
@@ -2688,7 +2713,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
 dependencies = [
  "bytemuck",
- "font-types",
+ "font-types 0.11.3",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.46.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdaa4fffe9ff3ca2c353fa9729792805b9b3e324695ff5a081f860612e81b330"
+dependencies = [
+ "bytemuck",
+ "foldhash",
+ "font-types 0.12.7",
+ "once_cell",
+ "smallvec",
+ "yoke",
 ]
 
 [[package]]
@@ -3168,7 +3207,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fbdfe3d2475fbd7ddd1f3e5cf8288a30eb3e5f95832829570cd88115a7434ac"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.37.0",
+]
+
+[[package]]
+name = "skrifa"
+version = "0.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7459fb60888ad9a5f367dd293fa2fb9df142cb451aa6bfd6cd66a7d6a9b739d"
+dependencies = [
+ "bytemuck",
+ "once_cell",
+ "read-fonts 0.46.0",
+ "smallvec",
+ "yoke",
 ]
 
 [[package]]
@@ -3688,7 +3740,7 @@ dependencies = [
  "log",
  "peniko",
  "png 0.17.16",
- "skrifa",
+ "skrifa 0.40.0",
  "smallvec",
 ]
 
